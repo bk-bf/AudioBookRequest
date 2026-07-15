@@ -1,0 +1,96 @@
+{#def
+    user: DetailedUser,
+    book: Audiobook,
+    queue_items: list[DownloadQueueItem],
+#}
+
+{% set active = queue_items | selectattr("state.is_active") | list %}
+<div id="book-status"
+     class="flex flex-col gap-3"
+     {% if active %}hx-get="{{ base_url }}/book/{{ book.asin }}/hx-status" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+    <div class="flex items-center gap-2">
+        <h2 class="text-lg font-bold">
+            Status
+        </h2>
+        {% if book.downloaded %}
+            <span class="badge badge-success">Downloaded</span>
+        {% elif active %}
+            <span class="badge badge-info">Downloading</span>
+        {% else %}
+            <span class="badge badge-ghost">Wanted</span>
+        {% endif %}
+    </div>
+    {% if book.downloaded_path %}
+        <div class="text-sm">
+            <span class="opacity-60">Path:</span>
+            <span class="font-mono break-all">{{ book.downloaded_path }}</span>
+        </div>
+    {% endif %}
+    {% if queue_items %}
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>
+                            Release
+                        </th>
+                        <th>
+                            Indexer
+                        </th>
+                        <th>
+                            Size
+                        </th>
+                        <th>
+                            State
+                        </th>
+                        <th>
+                            Added
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in queue_items %}
+                        <tr>
+                            <td class="max-w-60 truncate" title="{{ item.source_title }}">
+                                {{ item.source_title }}
+                            </td>
+                            <td>
+                                {{ item.indexer }}
+                            </td>
+                            <td>
+                                {{ item.size_MB }} MB
+                            </td>
+                            <td>
+                                {% if item.state.value.__eq__("downloading") %}
+                                    <div class="flex items-center gap-2">
+                                        <progress class="progress progress-primary w-20"
+                                                  value="{{ item.progress_percent }}"
+                                                  max="100"></progress>
+                                        <span class="text-xs">{{ item.progress_percent }}%</span>
+                                    </div>
+                                {% elif item.state.value.__eq__("queued") %}
+                                    <span class="badge badge-ghost">Queued</span>
+                                {% elif item.state.value.__eq__("stalled") %}
+                                    <span class="badge badge-warning">Stalled {{ item.progress_percent }}%</span>
+                                {% elif item.state.value.__eq__("completed") %}
+                                    <span class="badge badge-info">Importing…</span>
+                                {% elif item.state.value.__eq__("imported") %}
+                                    <span class="badge badge-success" title="{{ item.import_path }}">Imported</span>
+                                {% elif item.state.value.__eq__("error") %}
+                                    <span class="badge badge-error" title="{{ item.error }}">Failed</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-xs opacity-60">
+                                {{ item.created_at.strftime("%Y-%m-%d %H:%M") }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-sm opacity-60">
+            No download activity yet.
+        </p>
+    {% endif %}
+</div>

@@ -47,10 +47,10 @@
     </div>
     <!-- Book Info -->
     {% if book.asin %}
-        <a class="text-sm text-primary font-bold pt-1 line-clamp-2"
+        <a preload
+           class="text-sm text-primary font-bold pt-1 line-clamp-2"
            title="{{ book.title }}"
-           target="_blank"
-           href="https://audible{{ audible_regions[region] }}/pd/{{ book.asin }}?ipRedirectOverride=true">
+           href="{{ base_url }}/book/{{ book.asin }}">
             {{ book.title }}
         </a>
     {% else %}

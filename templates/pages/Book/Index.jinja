@@ -1,0 +1,99 @@
+{#def
+    user: DetailedUser,
+    book: Audiobook,
+    requests: list[AudiobookRequest],
+    queue_items: list[DownloadQueueItem],
+    region: audible_region_type,
+#}
+
+<BaseLayout title={{ book.title }} user={{ user }}>
+
+<div class="flex items-start justify-center p-2 md:p-4">
+    <main class="flex flex-col w-[95%] md:w-3/4 max-w-200 gap-6 pb-40">
+        <div class="flex flex-col sm:flex-row gap-6">
+            <div class="w-40 h-40 sm:w-56 sm:h-56 shrink-0 rounded-md overflow-hidden shadow shadow-black flex items-center justify-center">
+                {% if book.cover_image %}
+                    <img class="object-cover w-full h-full"
+                         height="224"
+                         width="224"
+                         src="{{ book.cover_image }}"
+                         alt="{{ book.title }}" />
+                {% else %}
+                    <div class="flex items-center justify-center w-full h-full bg-neutral opacity-30">
+                        <icons.PhotoOff />
+                    </div>
+                {% endif %}
+            </div>
+            <div class="flex flex-col gap-1 min-w-0">
+                <h1 class="text-2xl font-bold">
+                    {{ book.title }}
+                </h1>
+                {% if book.subtitle %}
+                    <h2 class="text-lg opacity-70">
+                        {{ book.subtitle }}
+                    </h2>
+                {% endif %}
+                <div class="text-sm pt-2">
+                    <span class="opacity-60">Author:</span>
+                    {% for author in book.authors %}
+                        <a preload
+                           class="link link-hover text-primary"
+                           href="{{ base_url }}/search?q={{ author }}">{{ author }}</a>
+                        {{- ", " if not loop.last else "" -}}
+                    {% endfor %}
+                </div>
+                {% if book.narrators %}
+                    <div class="text-sm">
+                        <span class="opacity-60">Narrator:</span>
+                        {{ book.narrators | join(", ") }}
+                    </div>
+                {% endif %}
+                <div class="text-sm">
+                    <span class="opacity-60">Released:</span>
+                    {{ book.release_date.strftime("%B %d, %Y") }}
+                </div>
+                <div class="text-sm">
+                    <span class="opacity-60">Runtime:</span>
+                    {{ book.runtime_length_hrs }} hrs
+                </div>
+                <div class="text-sm">
+                    <span class="opacity-60">Requested by:</span>
+                    {% if requests %}
+                        {{ requests | map(attribute="user_username") | join(", ") }}
+                    {% else %}
+                        nobody yet
+                    {% endif %}
+                </div>
+                <div class="flex flex-wrap gap-2 pt-3">
+                    {% if user.can_download() and not book.downloaded %}
+                        <button class="btn btn-primary btn-sm"
+                                hx-post="{{ base_url }}/book/{{ book.asin }}/hx-auto-download"
+                                hx-disabled-elt="this"
+                                hx-swap="none">
+                            <icons.Download />
+                            Download Best Source
+                        </button>
+                    {% endif %}
+                    {% if user.is_admin() %}
+                        <a preload
+                           class="btn btn-sm"
+                           href="{{ base_url }}/wishlist/sources/{{ book.asin }}">
+                            <icons.List />
+                            Browse Sources
+                        </a>
+                    {% endif %}
+                    <a class="btn btn-sm"
+                       target="_blank"
+                       rel="noopener"
+                       href="https://audible{{ audible_regions[region] }}/pd/{{ book.asin }}?ipRedirectOverride=true">
+                        View on Audible
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <Book.Status user={{ user }} book={{ book }} queue_items={{ queue_items }} />
+    </main>
+</div>
+
+</BaseLayout>

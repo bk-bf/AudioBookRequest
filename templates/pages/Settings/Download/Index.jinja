@@ -1,6 +1,8 @@
 {#def
     user: DetailedUser,
     auto_download: bool,
+    seeder_priority: bool,
+    seeder_include_leechers: bool,
     flac_range: QualityRange,
     m4b_range: QualityRange,
     mp3_range: QualityRange,
@@ -49,7 +51,7 @@
     <h2 class="text-lg">
         Download
     </h2>
-    <Settings.Download.Sliders auto_download={{ auto_download }} flac_range={{ flac_range }} m4b_range={{ m4b_range }} mp3_range={{ mp3_range }} unknown_audio_range={{ unknown_audio_range }} unknown_range={{ unknown_range }} min_seeders={{ min_seeders }} name_ratio={{ name_ratio }} title_ratio={{ title_ratio }} />
+    <Settings.Download.Sliders auto_download={{ auto_download }} seeder_priority={{ seeder_priority }} seeder_include_leechers={{ seeder_include_leechers }} flac_range={{ flac_range }} m4b_range={{ m4b_range }} mp3_range={{ mp3_range }} unknown_audio_range={{ unknown_audio_range }} unknown_range={{ unknown_range }} min_seeders={{ min_seeders }} name_ratio={{ name_ratio }} title_ratio={{ title_ratio }} />
 
     <hr class="my-4 border-base-200" />
 

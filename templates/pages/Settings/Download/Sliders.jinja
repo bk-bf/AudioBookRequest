@@ -1,5 +1,7 @@
 {#def
     auto_download: bool,
+    seeder_priority: bool,
+    seeder_include_leechers: bool,
     flac_range: QualityRange,
     m4b_range: QualityRange,
     mp3_range: QualityRange,
@@ -23,6 +25,28 @@
                type="checkbox"
                class="checkbox"
                {% if auto_download %}checked{% endif %} />
+    </div>
+    <div class="w-full flex items-center justify-between gap-2">
+        <label for="seeder-priority"
+               title="Prefer the most-seeded valid source over format/indexer preferences. The min-seeders floor below is unaffected.">
+            Prioritize Most Seeded
+        </label>
+        <input id="seeder-priority"
+               name="seeder_priority"
+               type="checkbox"
+               class="checkbox"
+               {% if seeder_priority %}checked{% endif %} />
+    </div>
+    <div class="w-full flex items-center justify-between gap-2">
+        <label for="seeder-include-leechers"
+               title="Rank by seeders + leechers (full swarm size) instead of seeders only.">
+            Count Leechers in Seeder Ranking
+        </label>
+        <input id="seeder-include-leechers"
+               name="seeder_include_leechers"
+               type="checkbox"
+               class="checkbox"
+               {% if seeder_include_leechers %}checked{% endif %} />
     </div>
     <h3 class="border-t pt-2 border-base-200">
         Quality <span class="text-xs">(kbit/s)</span>

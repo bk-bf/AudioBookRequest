@@ -25,6 +25,8 @@ QualityConfigKey = (
         "quality_name_exists_ratio",
         "quality_title_exists_ratio",
         "quality_min_seeders",
+        "quality_seeder_priority",
+        "quality_seeder_include_leechers",
     ]
 )
 FileFormat = Literal["flac", "m4b", "mp3", "unknown-audio", "unknown"]
@@ -75,6 +77,8 @@ class QualityProfile(StringConfigCache[QualityConfigKey]):
             "quality_name_exists_ratio",
             "quality_title_exists_ratio",
             "quality_min_seeders",
+            "quality_seeder_priority",
+            "quality_seeder_include_leechers",
         ]
         for key in keys:
             self.delete(session, key)
@@ -144,6 +148,21 @@ class QualityProfile(StringConfigCache[QualityConfigKey]):
 
     def set_min_seeders(self, session: Session, min_seeders: int):
         self.set_int(session, "quality_min_seeders", min_seeders)
+
+    def get_seeder_priority(self, session: Session) -> bool:
+        """When enabled, the amount of seeders is the primary tiebreaker between
+        valid sources instead of the last one. The min-seeders floor is unaffected."""
+        return bool(self.get_int(session, "quality_seeder_priority", 0))
+
+    def set_seeder_priority(self, session: Session, seeder_priority: bool):
+        self.set_int(session, "quality_seeder_priority", int(seeder_priority))
+
+    def get_seeder_include_leechers(self, session: Session) -> bool:
+        """When enabled, seeder comparisons rank by seeders+leechers instead of seeders only."""
+        return bool(self.get_int(session, "quality_seeder_include_leechers", 0))
+
+    def set_seeder_include_leechers(self, session: Session, include_leechers: bool):
+        self.set_int(session, "quality_seeder_include_leechers", int(include_leechers))
 
     def calculate_quality_rank(self, session: Session, file_format: FileFormat) -> int:
         format_order = self.get_format_order(session)

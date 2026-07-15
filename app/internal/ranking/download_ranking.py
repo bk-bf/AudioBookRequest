@@ -49,18 +49,34 @@ class CompareSource:
         self.session = session
         self.book = book
         self.is_manual = is_manual
-        self.compare_order = [
-            self._compare_valid,
-            self._compare_title,
-            self._compare_authors,
-            self._compare_narrators,
-            self._compare_format,
-            self._compare_flags,
-            self._compare_indexer,
-            self._compare_subtitle,
-            self._compare_seeders,
-            self._compare_age,
-        ]
+        if quality_config.get_seeder_priority(session):
+            # Seeder priority: among valid matches for the right book, the most
+            # seeded source wins before format/indexer preferences kick in.
+            self.compare_order = [
+                self._compare_valid,
+                self._compare_title,
+                self._compare_authors,
+                self._compare_narrators,
+                self._compare_seeders,
+                self._compare_format,
+                self._compare_flags,
+                self._compare_indexer,
+                self._compare_subtitle,
+                self._compare_age,
+            ]
+        else:
+            self.compare_order = [
+                self._compare_valid,
+                self._compare_title,
+                self._compare_authors,
+                self._compare_narrators,
+                self._compare_format,
+                self._compare_flags,
+                self._compare_indexer,
+                self._compare_subtitle,
+                self._compare_seeders,
+                self._compare_age,
+            ]
 
     def __call__(self, a: RankSource, b: RankSource):
         return self.compare(a, b)
@@ -314,9 +330,15 @@ class CompareSource:
     def _compare_seeders(self, a: RankSource, b: RankSource, next_compare: int) -> int:
         if a.source.protocol == "usenet" or b.source.protocol == "usenet":
             return self._get_next_compare(next_compare)(a, b, next_compare + 1)
-        if a.source.seeders == b.source.seeders:
+        if quality_config.get_seeder_include_leechers(self.session):
+            a_swarm = a.source.seeders + a.source.leechers
+            b_swarm = b.source.seeders + b.source.leechers
+        else:
+            a_swarm = a.source.seeders
+            b_swarm = b.source.seeders
+        if a_swarm == b_swarm:
             return self._get_next_compare(next_compare)(a, b, next_compare + 1)
-        return b.source.seeders - a.source.seeders
+        return b_swarm - a_swarm
 
     def _compare_age(self, a: RankSource, b: RankSource, next_compare: int) -> int:
         if a.source.protocol != b.source.protocol:

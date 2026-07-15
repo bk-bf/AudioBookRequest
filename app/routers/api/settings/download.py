@@ -14,6 +14,8 @@ router = APIRouter(prefix="/download")
 
 class DownloadSettings(BaseModel):
     auto_download: bool
+    seeder_priority: bool
+    seeder_include_leechers: bool
     flac_range: QualityRange
     m4b_range: QualityRange
     mp3_range: QualityRange
@@ -32,6 +34,8 @@ def get_download_settings(
 ):
     return DownloadSettings(
         auto_download=quality_config.get_auto_download(session),
+        seeder_priority=quality_config.get_seeder_priority(session),
+        seeder_include_leechers=quality_config.get_seeder_include_leechers(session),
         flac_range=quality_config.get_range(session, "quality_flac"),
         m4b_range=quality_config.get_range(session, "quality_m4b"),
         mp3_range=quality_config.get_range(session, "quality_mp3"),
@@ -46,6 +50,8 @@ def get_download_settings(
 
 class UpdateDownloadSettings(BaseModel):
     auto_download: bool
+    seeder_priority: bool
+    seeder_include_leechers: bool
     flac_range: QualityRange
     m4b_range: QualityRange
     mp3_range: QualityRange
@@ -63,6 +69,8 @@ def update_download_settings(
     _: Annotated[DetailedUser, Security(AnyAuth(GroupEnum.admin))],
 ):
     quality_config.set_auto_download(session, body.auto_download)
+    quality_config.set_seeder_priority(session, body.seeder_priority)
+    quality_config.set_seeder_include_leechers(session, body.seeder_include_leechers)
     quality_config.set_range(session, "quality_flac", body.flac_range)
     quality_config.set_range(session, "quality_m4b", body.m4b_range)
     quality_config.set_range(session, "quality_mp3", body.mp3_range)

@@ -24,6 +24,8 @@ def read_download(
     admin_user: Annotated[DetailedUser, Security(ABRAuth(GroupEnum.admin))],
 ):
     auto_download = quality_config.get_auto_download(session)
+    seeder_priority = quality_config.get_seeder_priority(session)
+    seeder_include_leechers = quality_config.get_seeder_include_leechers(session)
     flac_range = quality_config.get_range(session, "quality_flac")
     m4b_range = quality_config.get_range(session, "quality_m4b")
     mp3_range = quality_config.get_range(session, "quality_mp3")
@@ -38,6 +40,8 @@ def read_download(
         "Settings.Download.Index",
         user=admin_user,
         auto_download=auto_download,
+        seeder_priority=seeder_priority,
+        seeder_include_leechers=seeder_include_leechers,
         flac_range=flac_range,
         m4b_range=m4b_range,
         mp3_range=mp3_range,
@@ -68,6 +72,8 @@ def update_download(
     session: Annotated[Session, Depends(get_session)],
     admin_user: Annotated[DetailedUser, Security(ABRAuth(GroupEnum.admin))],
     auto_download: Annotated[bool, Form()] = False,
+    seeder_priority: Annotated[bool, Form()] = False,
+    seeder_include_leechers: Annotated[bool, Form()] = False,
 ):
     flac = QualityRange(from_kbits=flac_from, to_kbits=flac_to)
     m4b = QualityRange(from_kbits=m4b_from, to_kbits=m4b_to)
@@ -80,6 +86,8 @@ def update_download(
     api_update_download_settings(
         UpdateDownloadSettings(
             auto_download=auto_download,
+            seeder_priority=seeder_priority,
+            seeder_include_leechers=seeder_include_leechers,
             flac_range=flac,
             m4b_range=m4b,
             mp3_range=mp3,
@@ -98,6 +106,8 @@ def update_download(
         "Settings updated",
         "success",
         auto_download=auto_download,
+        seeder_priority=seeder_priority,
+        seeder_include_leechers=seeder_include_leechers,
         flac_range=flac,
         m4b_range=m4b,
         mp3_range=mp3,

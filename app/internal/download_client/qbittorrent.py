@@ -1,0 +1,212 @@
+from typing import final, override
+
+import aiohttp
+from aiohttp import ClientSession, FormData
+from pydantic import BaseModel, TypeAdapter
+
+from app.internal.download_client.abstract import (
+    ClientItemStatus,
+    DownloadClient,
+    DownloadClientError,
+)
+from app.internal.models import DownloadStateEnum, TorrentSource
+from app.util.connection import USER_AGENT
+from app.util.log import logger
+
+# https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-5.0)
+_STATE_MAP: dict[str, DownloadStateEnum] = {
+    "error": DownloadStateEnum.error,
+    "missingFiles": DownloadStateEnum.error,
+    "uploading": DownloadStateEnum.completed,
+    "stoppedUP": DownloadStateEnum.completed,
+    "pausedUP": DownloadStateEnum.completed,
+    "queuedUP": DownloadStateEnum.completed,
+    "stalledUP": DownloadStateEnum.completed,
+    "checkingUP": DownloadStateEnum.completed,
+    "forcedUP": DownloadStateEnum.completed,
+    "allocating": DownloadStateEnum.downloading,
+    "downloading": DownloadStateEnum.downloading,
+    "metaDL": DownloadStateEnum.downloading,
+    "forcedDL": DownloadStateEnum.downloading,
+    "moving": DownloadStateEnum.downloading,
+    "checkingDL": DownloadStateEnum.downloading,
+    "checkingResumeData": DownloadStateEnum.downloading,
+    "stalledDL": DownloadStateEnum.stalled,
+    "stoppedDL": DownloadStateEnum.queued,
+    "pausedDL": DownloadStateEnum.queued,
+    "queuedDL": DownloadStateEnum.queued,
+    "unknown": DownloadStateEnum.queued,
+}
+
+
+class _QbtTorrentInfo(BaseModel):
+    hash: str
+    name: str = ""
+    state: str = "unknown"
+    progress: float = 0.0
+    size: int = 0
+    dlspeed: int = 0
+    eta: int | None = None
+    content_path: str | None = None
+
+
+_QbtTorrentList = TypeAdapter(list[_QbtTorrentInfo])
+
+
+def parse_magnet_info_hash(magnet_url: str) -> str | None:
+    """Extract the btih info-hash from a magnet link."""
+    if not magnet_url.startswith("magnet:?"):
+        return None
+    for param in magnet_url.removeprefix("magnet:?").split("&"):
+        if param.startswith("xt=urn:btih:"):
+            return param.removeprefix("xt=urn:btih:").lower()
+    return None
+
+
+@final
+class QbittorrentClient(DownloadClient):
+    def __init__(self, base_url: str, username: str | None, password: str | None):
+        self.base_url = base_url.rstrip("/")
+        self.username = username or ""
+        self.password = password or ""
+
+    async def _login(self, client: ClientSession):
+        async with client.post(
+            f"{self.base_url}/api/v2/auth/login",
+            data={"username": self.username, "password": self.password},
+            headers={"User-Agent": USER_AGENT, "Referer": self.base_url},
+        ) as r:
+            text = await r.text()
+            if not r.ok or text.strip() != "Ok.":
+                raise DownloadClientError(
+                    f"qBittorrent login failed: {r.status} {text.strip()[:100]}"
+                )
+
+    def _session(self) -> ClientSession:
+        # cookie_jar keeps the SID cookie from login; unsafe allows IP-address hosts
+        return ClientSession(
+            timeout=aiohttp.ClientTimeout(30),
+            cookie_jar=aiohttp.CookieJar(unsafe=True),
+        )
+
+    @override
+    async def test_connection(self) -> str:
+        async with self._session() as client:
+            await self._login(client)
+            async with client.get(
+                f"{self.base_url}/api/v2/app/version",
+                headers={"User-Agent": USER_AGENT},
+            ) as r:
+                if not r.ok:
+                    raise DownloadClientError(
+                        f"qBittorrent version check failed: {r.status}"
+                    )
+                return await r.text()
+
+    @override
+    async def add_torrent(
+        self,
+        source: TorrentSource,
+        torrent_bytes: bytes | None,
+        category: str,
+    ) -> str:
+        """Add a torrent to qBittorrent. Prefers the raw .torrent (reliable info-hash),
+        falls back to the magnet link."""
+        if torrent_bytes is None and not source.magnet_url:
+            raise DownloadClientError("Source has neither torrent file nor magnet url")
+
+        form = FormData()
+        form.add_field("category", category)
+        if torrent_bytes is not None:
+            import torf
+
+            try:
+                info_hash = str(
+                    torf.Torrent.read_stream(torrent_bytes).infohash
+                ).lower()
+            except Exception as e:
+                raise DownloadClientError(f"Failed to parse torrent file: {e}") from e
+            form.add_field(
+                "torrents",
+                torrent_bytes,
+                filename="abr.torrent",
+                content_type="application/x-bittorrent",
+            )
+        else:
+            assert source.magnet_url is not None
+            magnet_hash = parse_magnet_info_hash(source.magnet_url)
+            if not magnet_hash:
+                raise DownloadClientError("Could not parse info-hash from magnet url")
+            info_hash = magnet_hash
+            form.add_field("urls", source.magnet_url)
+
+        async with self._session() as client:
+            await self._login(client)
+            async with client.post(
+                f"{self.base_url}/api/v2/torrents/add",
+                data=form,
+                headers={"User-Agent": USER_AGENT},
+            ) as r:
+                text = await r.text()
+                if not r.ok or text.strip() == "Fails.":
+                    raise DownloadClientError(
+                        f"qBittorrent rejected torrent: {r.status} {text.strip()[:100]}"
+                    )
+
+        logger.info(
+            "Added torrent to qBittorrent",
+            info_hash=info_hash,
+            title=source.title,
+            category=category,
+        )
+        return info_hash
+
+    @override
+    async def list_items(self, category: str) -> list[ClientItemStatus]:
+        async with self._session() as client:
+            await self._login(client)
+            async with client.get(
+                f"{self.base_url}/api/v2/torrents/info",
+                params={"category": category},
+                headers={"User-Agent": USER_AGENT},
+            ) as r:
+                if not r.ok:
+                    raise DownloadClientError(
+                        f"qBittorrent torrents/info failed: {r.status}"
+                    )
+                try:
+                    torrents = _QbtTorrentList.validate_python(await r.json())
+                except Exception as e:
+                    raise DownloadClientError(
+                        f"Failed to parse qBittorrent torrent list: {e}"
+                    ) from e
+
+        return [
+            ClientItemStatus(
+                download_id=t.hash.lower(),
+                name=t.name,
+                state=_STATE_MAP.get(t.state, DownloadStateEnum.queued),
+                progress=t.progress,
+                size=t.size,
+                download_speed=t.dlspeed or None,
+                # qBittorrent reports 8640000 as "infinite" eta
+                eta_seconds=(t.eta if t.eta is not None and t.eta < 8640000 else None),
+                content_path=t.content_path or None,
+            )
+            for t in torrents
+        ]
+
+    @override
+    async def remove(self, download_id: str, delete_files: bool = False) -> None:
+        async with self._session() as client:
+            await self._login(client)
+            async with client.post(
+                f"{self.base_url}/api/v2/torrents/delete",
+                data={
+                    "hashes": download_id,
+                    "deleteFiles": "true" if delete_files else "false",
+                },
+                headers={"User-Agent": USER_AGENT},
+            ) as r:
+                if not r.ok:
+                    raise DownloadClientError(f"qBittorrent delete failed: {r.status}")

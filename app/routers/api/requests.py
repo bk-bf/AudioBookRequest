@@ -363,7 +363,9 @@ async def download_book(
     except ProwlarrMisconfigured as e:
         raise HTTPException(status_code=500, detail=str(e))
     if not resp.ok:
-        raise HTTPException(status_code=500, detail="Failed to start download")
+        raise HTTPException(
+            status_code=500, detail=resp.error or "Failed to start download"
+        )
 
     if abs_config.is_valid(session):
         background_task.add_task(background_abs_trigger_scan)

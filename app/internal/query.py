@@ -107,7 +107,10 @@ async def query_sources(
                 except Exception:
                     logger.error("Failed to trigger ABS scan after starting download")
             else:
-                raise HTTPException(status_code=500, detail="Failed to start download")
+                raise HTTPException(
+                    status_code=500,
+                    detail=resp.error or "Failed to start download",
+                )
 
         return QueryResult(
             sources=ranked,

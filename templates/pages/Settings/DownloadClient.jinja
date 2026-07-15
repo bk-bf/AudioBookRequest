@@ -1,0 +1,150 @@
+{#def
+    user: DetailedUser,
+    settings: DownloadClientSettings,
+#}
+
+<SettingsLayout user={{ user }} page="download-client" title="Settings - Download Client">
+
+<div class="flex flex-col gap-2">
+    <h2 class="text-lg">
+        Download Client (qBittorrent)
+    </h2>
+    <p class="text-xs opacity-60">
+        When enabled, ABR adds torrents directly to qBittorrent, tracks their progress on
+        the wishlist, and imports finished files into your library — like Radarr. When
+        disabled, downloads are handed off to Prowlarr's own download client (legacy
+        behavior, no progress tracking).
+    </p>
+    <form class="flex flex-col gap-2"
+          hx-post="{{ base_url }}/settings/download-client/hx-update"
+          hx-disabled-elt="#dc-save-button"
+          hx-swap="none">
+        <div class="w-full flex items-center justify-between gap-2 border-t pt-2 border-base-200">
+            <label for="dc-enabled">
+                Enabled
+            </label>
+            <input id="dc-enabled"
+                   name="dc_enabled"
+                   type="checkbox"
+                   class="toggle"
+                   {% if settings.dc_enabled %}checked{% endif %} />
+        </div>
+        <label for="dc-base-url">
+            qBittorrent WebUI URL
+        </label>
+        <input id="dc-base-url"
+               name="dc_base_url"
+               type="url"
+               placeholder="http://qbittorrent:8080"
+               value="{{ settings.dc_base_url }}"
+               class="input w-full"
+               required />
+        <div class="flex gap-2 w-full">
+            <div class="flex flex-col gap-2 w-1/2">
+                <label for="dc-username">
+                    Username
+                </label>
+                <input id="dc-username"
+                       name="dc_username"
+                       type="text"
+                       autocomplete="off"
+                       value="{{ settings.dc_username }}"
+                       class="input w-full" />
+            </div>
+            <div class="flex flex-col gap-2 w-1/2">
+                <label for="dc-password">
+                    Password
+                </label>
+                <input id="dc-password"
+                       name="dc_password"
+                       type="password"
+                       autocomplete="new-password"
+                       {% if settings.dc_has_password %}placeholder="●●●●●●●● (unchanged)"{% endif %}
+                       class="input w-full" />
+            </div>
+        </div>
+        <label for="dc-category">
+            Category
+        </label>
+        <input id="dc-category"
+               name="dc_category"
+               type="text"
+               value="{{ settings.dc_category }}"
+               class="input w-full" />
+        <p class="text-xs opacity-60">
+            Torrents are added with this qBittorrent category and only torrents in it are tracked.
+        </p>
+        <label for="dc-library-dir">
+            Library Directory
+        </label>
+        <input id="dc-library-dir"
+               name="dc_library_dir"
+               type="text"
+               placeholder="/data/media/audiobooks"
+               value="{{ settings.dc_library_dir }}"
+               class="input w-full"
+               required />
+        <p class="text-xs opacity-60">
+            Finished downloads are hardlinked (or copied across filesystems) into
+            <span class="font-mono">&lt;library&gt;/&lt;Author&gt;/&lt;Title&gt;/</span>.
+            For hardlinks to work, downloads and library must be on the same filesystem and
+            mounted at identical paths in the ABR and qBittorrent containers.
+        </p>
+        <details class="collapse collapse-arrow border border-base-200">
+            <summary class="collapse-title">
+                Remote Path Mapping (optional)
+            </summary>
+            <div class="collapse-content flex flex-col gap-2">
+                <p class="text-xs opacity-60">
+                    Only needed when qBittorrent reports paths that differ from how ABR sees them.
+                </p>
+                <label for="dc-path-map-from">
+                    Client path prefix
+                </label>
+                <input id="dc-path-map-from"
+                       name="dc_path_map_from"
+                       type="text"
+                       placeholder="/downloads"
+                       value="{{ settings.dc_path_map_from }}"
+                       class="input w-full" />
+                <label for="dc-path-map-to">
+                    ABR path prefix
+                </label>
+                <input id="dc-path-map-to"
+                       name="dc_path_map_to"
+                       type="text"
+                       placeholder="/data/torrents"
+                       value="{{ settings.dc_path_map_to }}"
+                       class="input w-full" />
+            </div>
+        </details>
+        <label for="dc-auto-retry">
+            Auto-Download Retry Interval (minutes)
+        </label>
+        <input id="dc-auto-retry"
+               name="dc_auto_retry_minutes"
+               type="number"
+               min="1"
+               value="{{ settings.dc_auto_retry_minutes }}"
+               class="input w-full" />
+        <p class="text-xs opacity-60">
+            How long to wait before re-searching sources for a wishlist book that couldn't be
+            grabbed yet. The background sweep runs automatically when Auto Download is enabled
+            in the Download settings.
+        </p>
+        <div class="flex gap-2 pt-2">
+            <button id="dc-save-button" type="submit" class="btn btn-primary flex-1">
+                Save
+            </button>
+            <button type="button"
+                    class="btn"
+                    hx-post="{{ base_url }}/settings/download-client/hx-test"
+                    hx-disabled-elt="this"
+                    hx-swap="none">
+                Test Connection
+            </button>
+        </div>
+    </form>
+</div>
+
+</SettingsLayout>

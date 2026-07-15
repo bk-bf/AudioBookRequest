@@ -7,11 +7,14 @@ from datetime import datetime
 from typing import Literal
 from urllib.parse import urlencode
 
-from aiohttp import ClientResponse, ClientSession
+from aiohttp import ClientSession
 from pydantic import BaseModel, TypeAdapter
 from sqlmodel import Session, select
 from torf import BdecodeError, MetainfoError, ReadError, Torrent
 
+from app.internal.download_client.abstract import DownloadClientError
+from app.internal.download_client.config import dc_config
+from app.internal.download_client.grab import get_download_client, grab_via_client
 from app.internal.indexers.abstract import SessionContainer
 from app.internal.models import (
     Audiobook,
@@ -58,6 +61,38 @@ async def _get_torrent_info_hash(
             )
 
 
+class DownloadResult(BaseModel):
+    """Outcome of a grab, either via ABR's own download client or the Prowlarr hand-off."""
+
+    ok: bool = True
+    error: str | None = None
+
+
+def _resolve_book(
+    session: Session, asin_or_uuid: str | None
+) -> Audiobook | ManualBookRequest | None:
+    if asin_or_uuid is None:
+        return None
+    try:
+        uuid_obj = uuid.UUID(asin_or_uuid)
+        return session.get(ManualBookRequest, uuid_obj)
+    except ValueError:
+        return session.get(Audiobook, asin_or_uuid)
+
+
+def _resolve_source_from_cache(
+    session: Session, book: Audiobook | ManualBookRequest, guid: str
+) -> ProwlarrSource | None:
+    source_ttl = prowlarr_config.get_source_ttl(session)
+    cached = prowlarr_source_cache.get(source_ttl, book.title)
+    if not cached:
+        return None
+    for source in cached:
+        if source.guid == guid:
+            return source
+    return None
+
+
 async def start_download(
     *,
     session: Session,
@@ -66,7 +101,49 @@ async def start_download(
     indexer_id: int,
     prowlarr_source: ProwlarrSource | None = None,
     asin_or_uuid: str | None = None,
-) -> ClientResponse:
+) -> DownloadResult:
+    book = _resolve_book(session, asin_or_uuid)
+    manual_book_request = book if isinstance(book, ManualBookRequest) else None
+
+    # When ABR has its own download client configured, grab torrents directly so
+    # progress can be tracked and files imported on completion (Radarr-style).
+    if dc_config.is_valid(session) and book is not None:
+        if prowlarr_source is None:
+            prowlarr_source = _resolve_source_from_cache(session, book, guid)
+        if prowlarr_source is not None and prowlarr_source.protocol == "torrent":
+            client = get_download_client(session)
+            assert client is not None
+            try:
+                await grab_via_client(
+                    session, client_session, client, prowlarr_source, book
+                )
+                return DownloadResult(ok=True)
+            except DownloadClientError as e:
+                logger.error(
+                    "Download client grab failed",
+                    guid=guid,
+                    error=str(e),
+                )
+                if manual_book_request:
+                    await send_all_manual_notifications(
+                        EventEnum.on_failed_download,
+                        manual_book_request,
+                        {"errorStatus": "client", "errorReason": str(e)},
+                    )
+                else:
+                    await send_all_notifications(
+                        EventEnum.on_failed_download,
+                        asin_or_uuid,
+                        {"errorStatus": "client", "errorReason": str(e)},
+                    )
+                return DownloadResult(ok=False, error=str(e))
+        else:
+            logger.warning(
+                "Download client enabled but source not grabbable directly, falling back to Prowlarr hand-off",
+                guid=guid,
+                protocol=prowlarr_source.protocol if prowlarr_source else None,
+            )
+
     prowlarr_config.raise_if_invalid(session)
     base_url = prowlarr_config.get_base_url(session)
     api_key = prowlarr_config.get_api_key(session)
@@ -75,13 +152,6 @@ async def start_download(
     url = posixpath.join(base_url, "api/v1/search")
     logger.debug("Starting download", guid=guid)
     headers = {"X-Api-Key": api_key, "User-Agent": USER_AGENT}
-
-    manual_book_request: ManualBookRequest | None = None
-    try:
-        uuid_obj = uuid.UUID(asin_or_uuid)
-        manual_book_request = session.get(ManualBookRequest, uuid_obj)
-    except ValueError:
-        pass
 
     async with client_session.post(
         url,
@@ -114,7 +184,10 @@ async def start_download(
                         "errorReason": response.reason or "<unknown>",
                     },
                 )
-            return response
+            return DownloadResult(
+                ok=False,
+                error=f"Prowlarr grab failed: {response.status} {response.reason}",
+            )
 
         # Find additional metadata/replacements to pass along notifications
         additional_replacements: dict[str, str] = {}
@@ -159,7 +232,7 @@ async def start_download(
                 additional_replacements,
             )
 
-        return response
+        return DownloadResult(ok=True)
 
 
 class _ProwlarrResultBase(BaseModel):

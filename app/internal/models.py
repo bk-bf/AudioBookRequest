@@ -82,6 +82,7 @@ class Audiobook(BaseSQLModel, table=True):
         ),
     )
     downloaded: bool = False
+    downloaded_path: str | None = None
 
     requests: list["AudiobookRequest"] = Relationship(back_populates="audiobook")  # pyright: ignore[reportAny]
 
@@ -139,6 +140,7 @@ class AudiobookWishlistResult(BaseModel):
     book: Audiobook
     requests: list[AudiobookRequest]
     download_error: str | None = None
+    queue: "DownloadQueueItem | None" = None
 
     @property
     def amount_requested(self):
@@ -168,10 +170,78 @@ class ManualBookRequest(BaseSQLModel, table=True):
         ),
     )
     downloaded: bool = False
+    downloaded_path: str | None = None
 
     model_config: SQLModelConfig = cast(
         SQLModelConfig, cast(object, ConfigDict(arbitrary_types_allowed=True))
     )
+
+
+class DownloadStateEnum(str, Enum):
+    queued = "queued"
+    downloading = "downloading"
+    stalled = "stalled"
+    completed = "completed"  # finished in the client, awaiting import
+    imported = "imported"  # files placed into the library
+    error = "error"
+
+    @property
+    def is_active(self) -> bool:
+        return self in (
+            DownloadStateEnum.queued,
+            DownloadStateEnum.downloading,
+            DownloadStateEnum.stalled,
+            DownloadStateEnum.completed,
+        )
+
+
+class DownloadQueueItem(BaseSQLModel, table=True):
+    """A download that ABR handed to its own download client and is tracking to completion."""
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    asin: str | None = Field(default=None, index=True)
+    manual_request_id: uuid.UUID | None = Field(default=None, index=True)
+    download_id: str = Field(index=True)  # torrent info-hash (lowercase)
+    client: str = "qbittorrent"
+    source_title: str
+    indexer: str
+    protocol: str = "torrent"
+    size: int = 0  # in bytes
+    progress: float = 0.0  # 0.0 - 1.0
+    state: DownloadStateEnum = Field(
+        default=DownloadStateEnum.queued,
+        sa_column_kwargs={"server_default": "queued"},
+    )
+    eta_seconds: int | None = None
+    download_speed: int | None = None  # bytes/s
+    save_path: str | None = None  # content path as reported by the client
+    import_path: str | None = None  # where the files were imported to
+    error: str | None = None
+    created_at: datetime = Field(
+        default_factory=datetime.now,
+        sa_column=Column(
+            server_default=func.now(),
+            type_=DateTime,
+            nullable=False,
+        ),
+    )
+    updated_at: datetime = Field(
+        default_factory=datetime.now,
+        sa_column=Column(
+            onupdate=func.now(),
+            server_default=func.now(),
+            type_=DateTime,
+            nullable=False,
+        ),
+    )
+
+    @property
+    def progress_percent(self) -> int:
+        return int(round(self.progress * 100))
+
+    @property
+    def size_MB(self) -> float:
+        return round(self.size / 1e6, 1)
 
 
 class BookMetadata(BaseSQLModel):

@@ -38,6 +38,30 @@ async def wishlist(
     )
 
 
+@router.get("/hx-poll")
+async def poll_wishlist(
+    session: Annotated[Session, Depends(get_session)],
+    user: Annotated[DetailedUser, Security(ABRAuth())],
+    page: str = "wishlist",
+):
+    """Polled by the wishlist while downloads are active to refresh progress."""
+    username = None if user.is_admin() else user.username
+    results = get_wishlist_results(
+        session,
+        username,
+        "downloaded" if page == "downloaded" else "not_downloaded",
+    )
+    counts = get_wishlist_counts(session, user)
+    return catalog_response(
+        "Wishlist.Wishlist",
+        user=user,
+        results=results,
+        page=page,
+        counts=counts,
+        update_tablist=True,
+    )
+
+
 @router.post("/hx-auto-download/{asin}")
 async def start_auto_download(
     asin: str,

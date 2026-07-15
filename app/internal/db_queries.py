@@ -9,6 +9,7 @@ from app.internal.models import (
     Audiobook,
     AudiobookRequest,
     AudiobookWishlistResult,
+    DownloadQueueItem,
     ManualBookRequest,
     User,
 )
@@ -95,10 +96,25 @@ def get_wishlist_results(
         )
     ).all()
 
+    # Attach the newest download-queue item per book so the wishlist can show
+    # live download progress and import state.
+    queue_map: dict[str, DownloadQueueItem] = {}
+    asins = [book.asin for book in results]
+    if asins:
+        queue_items = session.exec(
+            select(DownloadQueueItem)
+            .where(col(DownloadQueueItem.asin).in_(asins))
+            .order_by(asc(DownloadQueueItem.created_at))
+        ).all()
+        for item in queue_items:
+            if item.asin:
+                queue_map[item.asin] = item  # newest wins
+
     return [
         AudiobookWishlistResult(
             book=book,
             requests=book.requests,
+            queue=queue_map.get(book.asin),
         )
         for book in results
     ]

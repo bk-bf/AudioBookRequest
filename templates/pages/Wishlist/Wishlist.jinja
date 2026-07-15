@@ -6,7 +6,10 @@
     update_tablist = False, # performs oob replacement for the tablist
 #}
 
-<table id="book-table-body" class="table table-pin-rows min-w-240">
+{% set active_downloads = results | selectattr("queue") | map(attribute="queue") | selectattr("state.is_active") | list %}
+<table id="book-table-body"
+       class="table table-pin-rows min-w-240"
+       {% if active_downloads %}hx-get="{{ base_url }}/wishlist/hx-poll?page={{ page }}" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
     {% if update_tablist %}
         <Wishlist.Tablist page={{ page }} counts={{ counts }} />
     {% endif %}
@@ -34,6 +37,9 @@
             </th>
             <th>
                 # Requested
+            </th>
+            <th>
+                Status
             </th>
             <th>
             </th>
@@ -79,7 +85,7 @@
                     <td>
                         <div class="flex flex-col">
                             <a preload
-                               href="{{ base_url }}/search?q={{ book.title+' ' +(book.authors|join(",") ) }}"
+                               href="{{ base_url }}/book/{{ book.asin }}"
                                class="font-bold text-primary line-clamp-4"
                                title="{{ book.title }}">{{ book.title }}</a>
                             {% if book.subtitle %}
@@ -135,6 +141,35 @@
                         {% endif %}
                     </td>
 
+                    <td class="min-w-24">
+                        {% set queue = result.queue %}
+                        {% if queue %}
+                            {% if queue.state.value.__eq__("downloading") %}
+                                <div class="flex flex-col gap-1" title="{{ queue.source_title }}">
+                                    <progress class="progress progress-primary w-20"
+                                              value="{{ queue.progress_percent }}"
+                                              max="100"></progress>
+                                    <span class="text-xs">{{ queue.progress_percent }}%</span>
+                                </div>
+                            {% elif queue.state.value.__eq__("queued") %}
+                                <span class="badge badge-ghost" title="{{ queue.source_title }}">Queued</span>
+                            {% elif queue.state.value.__eq__("stalled") %}
+                                <span class="badge badge-warning"
+                                      title="Stalled at {{ queue.progress_percent }}% — {{ queue.source_title }}">Stalled {{ queue.progress_percent }}%</span>
+                            {% elif queue.state.value.__eq__("completed") %}
+                                <span class="badge badge-info" title="{{ queue.source_title }}">Importing…</span>
+                            {% elif queue.state.value.__eq__("imported") %}
+                                <span class="badge badge-success" title="{{ queue.import_path }}">Imported</span>
+                            {% elif queue.state.value.__eq__("error") %}
+                                <span class="badge badge-error" title="{{ queue.error }}">Failed</span>
+                            {% endif %}
+                        {% elif book.downloaded %}
+                            <span class="badge badge-success">Downloaded</span>
+                        {% else %}
+                            <span class="text-xs opacity-40">—</span>
+                        {% endif %}
+                    </td>
+
                     <td class="grid grid-cols-2 min-w-32 gap-1 w-fit ml-auto">
                         <a preload
                            title="Torrent Sources"
@@ -144,7 +179,7 @@
                             <icons.List />
                         </a>
                         <button {% if book.downloaded %}title="Downloaded"class="btn btn-square btn-ghost bg-success text-neutral/20" {% else %} title="Automatic Download" class="btn btn-square" {% endif %}
-                                {% if not user.can_download() or book.downloaded %}disabled{% endif %}
+                                {% if not user.can_download() or book.downloaded or (result.queue and result.queue.state.is_active) %}disabled{% endif %}
                                 hx-post="{{ base_url }}/wishlist/hx-auto-download/{{ book.asin }}"
                                 hx-swap="outerHTML"
                                 hx-target="#book-table-body"

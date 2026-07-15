@@ -76,10 +76,12 @@ class QbittorrentClient(DownloadClient):
             data={"username": self.username, "password": self.password},
             headers={"User-Agent": USER_AGENT, "Referer": self.base_url},
         ) as r:
-            text = await r.text()
-            if not r.ok or text.strip() != "Ok.":
+            text = (await r.text()).strip()
+            # Success is 200 with body "Ok."; behind an auth subnet whitelist
+            # qBittorrent instead answers 204 with an empty body.
+            if not r.ok or text == "Fails.":
                 raise DownloadClientError(
-                    f"qBittorrent login failed: {r.status} {text.strip()[:100]}"
+                    f"qBittorrent login failed: {r.status} {text[:100]}"
                 )
 
     def _session(self) -> ClientSession:

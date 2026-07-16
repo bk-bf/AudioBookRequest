@@ -5,6 +5,7 @@ from typing import Annotated
 
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Form, HTTPException, Security
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, desc, select
 
 from app.internal.audible.extended import get_extended_metadata
@@ -41,9 +42,14 @@ async def _get_book_context(session: Session, client_session: ClientSession, asi
         except Exception as e:
             logger.warning("Failed to fetch book from Audible", asin=asin, error=str(e))
         if book:
-            session.add(book)
-            session.commit()
-            session.refresh(book)
+            try:
+                session.add(book)
+                session.commit()
+                session.refresh(book)
+            except IntegrityError:
+                # racing request (link preload + navigation) inserted it first
+                session.rollback()
+                book = session.get(Audiobook, asin)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     requests = session.exec(

@@ -21,9 +21,11 @@ from app.routers.api.settings.audiobookshelf import (
 from app.routers.api.settings.audiobookshelf import (
     update_abs_library as api_update_abs_library,
 )
+from app.internal.audiobookshelf.sync import sync_abs_library
 from app.util.connection import get_connection
 from app.util.db import get_session
 from app.util.templates import catalog_response
+from app.util.toast import ToastException
 
 router = APIRouter(prefix="/audiobookshelf")
 
@@ -97,3 +99,20 @@ def update_abs_check_downloaded(
         check_downloaded=check_downloaded,
     )
     return Response(status_code=204, headers={"HX-Refresh": "true"})
+
+
+@router.post("/hx-sync-library")
+async def sync_library_now(
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    admin_user: Annotated[DetailedUser, Security(ABRAuth(GroupEnum.admin))],
+):
+    _ = admin_user
+    try:
+        result = await sync_abs_library(session, client_session)
+    except Exception as e:
+        raise ToastException(f"Library sync failed: {e}") from e
+    raise ToastException(
+        f"Library synced: {result.matched}/{result.total_items} items with ASIN, {result.added} added, {result.updated} updated",
+        "success",
+    )

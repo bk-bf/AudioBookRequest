@@ -36,12 +36,15 @@ def get_wishlist_counts(session: Session, user: User | None = None) -> WishlistC
         .group_by(col(Audiobook.downloaded))
     ).all()
     requests = 0
-    downloaded = 0
     for downloaded_status, count in rows:
-        if downloaded_status:
-            downloaded = count
-        else:
+        if not downloaded_status:
             requests = count
+
+    # the downloaded tab is a library view: every downloaded book counts,
+    # whether it was requested through ABR or synced from Audiobookshelf
+    downloaded = session.exec(
+        select(func.count()).select_from(Audiobook).where(col(Audiobook.downloaded))
+    ).one()
 
     manual = session.exec(
         select(func.count())
@@ -76,16 +79,24 @@ def get_wishlist_results(
         case _:
             clause = True
 
+    # "downloaded" is a library view (requested or synced from ABS); the
+    # other filters stay scoped to requested books
+    if response_type == "downloaded":
+        request_clause = True
+    else:
+        request_clause = col(Audiobook.asin).in_(
+            select(AudiobookRequest.asin).where(
+                not username or AudiobookRequest.user_username == username
+            )
+        )
+
     results = session.exec(
         select(Audiobook)
         .where(
             clause,
-            col(Audiobook.asin).in_(
-                select(AudiobookRequest.asin).where(
-                    not username or AudiobookRequest.user_username == username
-                )
-            ),
+            request_clause,
         )
+        .order_by(asc(Audiobook.title))
         .options(
             selectinload(
                 cast(

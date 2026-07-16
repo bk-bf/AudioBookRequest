@@ -1,3 +1,4 @@
+import asyncio
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -23,6 +24,7 @@ from app.util.log import logger
 
 POLL_INTERVAL_SECONDS = 10
 SWEEP_INTERVAL_MINUTES = 10
+LIBRARY_SYNC_INTERVAL_MINUTES = 60
 MAX_GRABS_PER_SWEEP = 5
 MISSING_GRACE_SECONDS = 300
 
@@ -159,6 +161,8 @@ async def auto_download_sweep():
 @asynccontextmanager
 async def monitor_lifespan(app: FastAPI):
     _ = app
+    from app.internal.audiobookshelf.sync import background_sync_abs_library
+
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
         poll_download_queue,
@@ -174,7 +178,17 @@ async def monitor_lifespan(app: FastAPI):
         max_instances=1,
         coalesce=True,
     )
+    scheduler.add_job(
+        background_sync_abs_library,
+        "interval",
+        minutes=LIBRARY_SYNC_INTERVAL_MINUTES,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.start()
     logger.info("Download queue monitor started")
+    # sync the library once at startup so existing books show up immediately
+    startup_sync = asyncio.create_task(background_sync_abs_library())
     yield
+    _ = startup_sync
     scheduler.shutdown()

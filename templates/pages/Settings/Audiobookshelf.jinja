@@ -79,6 +79,19 @@
             Save
         </button>
     </form>
+    <div class="pt-4 flex flex-col gap-2">
+        <button type="button"
+                class="btn"
+                hx-post="{{ base_url }}/settings/audiobookshelf/hx-sync-library"
+                hx-disabled-elt="this"
+                hx-swap="none">
+            Sync Library Now
+        </button>
+        <p class="text-xs opacity-60">
+            Imports every Audiobookshelf library item with an ASIN into ABR as downloaded.
+            Also runs automatically on startup and every hour.
+        </p>
+    </div>
     <div class="form-control pt-4">
         <label class="label cursor-pointer">
             <span class="label-text">Use ABS to mark existing books as downloaded</span>

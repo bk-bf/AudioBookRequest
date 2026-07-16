@@ -48,6 +48,14 @@ async def search_books(
     # refreshes the "requests"
     merged: list[Audiobook] = []
     for res in results:
+        # session.merge overwrites ALL fields; don't let a fresh Audible result
+        # clobber the downloaded state or imported path of a known book
+        existing = session.get(Audiobook, res.asin)
+        if existing:
+            res.downloaded = existing.downloaded or res.downloaded
+            res.downloaded_path = existing.downloaded_path
+            if existing.cover_image and not res.cover_image:
+                res.cover_image = existing.cover_image
         merged.append(session.merge(res))
 
     # flag books that already exist in the Audiobookshelf library

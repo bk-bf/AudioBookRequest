@@ -55,6 +55,7 @@ class ABSBookItemMinified(BaseModel):
     id: str
     media: ABSBookMinified
     mediaType: Literal["book"]
+    path: str | None = None
 
 
 class ABSPodcastItem(BaseModel):

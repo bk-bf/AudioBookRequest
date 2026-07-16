@@ -23,7 +23,8 @@ from app.internal.notifications import (
 from app.util.log import logger
 
 AUDIO_EXTENSIONS = {".m4b", ".m4a", ".mp3", ".flac", ".ogg", ".opus", ".aac", ".wma"}
-EXTRA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".cue", ".nfo", ".pdf", ".epub", ".txt"}
+# no .txt/.nfo: overwhelmingly tracker spam ("Downloaded From X.txt")
+EXTRA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".cue", ".pdf", ".epub"}
 
 
 def sanitize_path_part(part: str) -> str:

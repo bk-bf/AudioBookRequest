@@ -4,6 +4,7 @@ from . import (
     abs_proxy,
     auth,
     book,
+    browse,
     index,
     init,
     login,
@@ -20,6 +21,7 @@ router = APIRouter()
 router.include_router(abs_proxy.router)
 router.include_router(auth.router)
 router.include_router(book.router)
+router.include_router(browse.router)
 router.include_router(index.router)
 router.include_router(init.router)
 router.include_router(login.router)

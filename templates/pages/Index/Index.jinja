@@ -6,25 +6,20 @@
 #}
 
 <BaseLayout title="AudioBookRequest" user={{ user }}>
-<div class="w-screen flex flex-col items-center justify-center p-6 sm:p-8 overflow-x-hidden gap-6">
-    <!-- Welcome Header -->
-    <div class="w-full max-w-7xl">
-        <div class="flex justify-between items-center mb-4 w-full">
-            <div class="min-w-0 flex-1 mr-4">
-                <h1 class="text-4xl font-bold text-left truncate"
-                    title="{{ user.username }}">
-                    Welcome, {{ user.username }}!
-                </h1>
-                <p class="text-lg opacity-70 mt-1">
-                    Discover your next great audiobook
-                </p>
-            </div>
+<div class="w-screen flex flex-col items-center justify-center p-4 sm:p-8 overflow-x-hidden gap-2">
+    <div class="w-full max-w-7xl"
+         hx-get="{{ base_url }}/hx-hero"
+         hx-trigger="load"
+         hx-swap="outerHTML">
+        <div class="rounded-2xl bg-base-200 animate-pulse min-h-64 mb-8">
         </div>
     </div>
 
-    <Index.PopularSection title="For You" user={{ user }} view_more="/recommendations/for-you" lazy_url="/hx-for-you" description="Personalized recommendations based on your requests" empty="No recommendations available at this time. Request some books to start getting recommendations." region={{ region }} auto_start_download={{ auto_download }} />
+    <Index.PopularSection title="Recently Added" user={{ user }} lazy_url="/hx-recent-library" region={{ region }} auto_start_download={{ auto_download }} />
+    <Index.PopularSection title="For You" user={{ user }} view_more="/recommendations/for-you" lazy_url="/hx-for-you" region={{ region }} auto_start_download={{ auto_download }} />
+    <Index.PopularSection title="Popular on Audible" user={{ user }} lazy_url="/hx-fallback" region={{ region }} auto_start_download={{ auto_download }} />
     {% if show_popular %}
-        <Index.PopularSection title="Popular" user={{ user }} lazy_url="/hx-popular" description="The most popular books on the instance" empty="No popular recommendations available at this time. Request some books to start getting recommendations." region={{ region }} auto_start_download={{ auto_download }} />
+        <Index.PopularSection title="Popular on this server" user={{ user }} lazy_url="/hx-popular" region={{ region }} auto_start_download={{ auto_download }} />
     {% endif %}
     <Index.Categories lazy_load={{ True }} region={{ region }} auto_start_download={{ auto_download }} user={{ user }} />
 

@@ -29,6 +29,16 @@
                 {% if sort_by.__eq__("requester") %}selected{% endif %}>
             Requested by
         </option>
+        {% if page.__eq__("downloaded") %}
+            <option value="downloaded_at"
+                    {% if sort_by.__eq__("downloaded_at") %}selected{% endif %}>
+                Date downloaded
+            </option>
+            <option value="imported"
+                    {% if sort_by.__eq__("imported") %}selected{% endif %}>
+                Date imported
+            </option>
+        {% endif %}
     </select>
     {% if user.is_admin() and usernames %}
         <select name="requested_by"

@@ -4,11 +4,11 @@ from datetime import datetime
 import aiohttp
 from aiohttp import ClientSession
 from pydantic import BaseModel
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from app.internal.audiobookshelf.config import abs_config
 from app.internal.audiobookshelf.types import ABSBookItemMinified
-from app.internal.models import Audiobook
+from app.internal.models import Audiobook, AudiobookRequest, User
 from app.util.connection import USER_AGENT
 from app.util.db import get_session
 from app.util.log import logger
@@ -133,6 +133,29 @@ async def sync_abs_library(
             result.added += 1
 
     session.commit()
+
+    # Retroactive requester attribution: downloaded books nobody requested
+    # through ABR (library imports that predate it) are attributed to the
+    # root user so requester pills and filters have something to show.
+    root_user = session.exec(select(User).where(col(User.root))).first()
+    if root_user:
+        orphans = session.exec(
+            select(Audiobook).where(
+                col(Audiobook.downloaded),
+                col(Audiobook.asin).not_in(select(AudiobookRequest.asin)),
+            )
+        ).all()
+        for book in orphans:
+            session.add(
+                AudiobookRequest(asin=book.asin, user_username=root_user.username)
+            )
+        if orphans:
+            session.commit()
+            logger.info(
+                "Attributed unrequested library books to root user",
+                count=len(orphans),
+            )
+
     logger.info(
         "ABS library sync complete",
         total_items=result.total_items,

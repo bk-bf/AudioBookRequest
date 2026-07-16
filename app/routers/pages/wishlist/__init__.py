@@ -73,11 +73,11 @@ async def bulk_action(
     session: Annotated[Session, Depends(get_session)],
     user: Annotated[DetailedUser, Security(ABRAuth())],
     background_task: BackgroundTasks,
-    sel_asin: Annotated[list[str], Form()] = [],
+    sel_asin: Annotated[list[str] | None, Form()] = None,
     page: str = "wishlist",
 ):
     """Bulk download/delete/mark for the selected wishlist rows."""
-    asins = sel_asin
+    asins = sel_asin or []
     if not asins:
         raise ToastException("No books selected", "info")
     if action == "download":

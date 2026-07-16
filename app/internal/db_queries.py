@@ -10,6 +10,7 @@ from app.internal.models import (
     AudiobookRequest,
     AudiobookWishlistResult,
     DownloadQueueItem,
+    DownloadStateEnum,
     ManualBookRequest,
     User,
 )
@@ -79,6 +80,18 @@ def sort_wishlist_results(
                 key=lambda r: (
                     r.requests[0].user_username.lower() if r.requests else "~"
                 ),
+            )
+        case "downloaded_at":
+            return sorted(results, key=lambda r: r.book.updated_at, reverse=True)
+        case "imported":
+            return sorted(
+                results,
+                key=lambda r: (
+                    r.queue.updated_at
+                    if r.queue and r.queue.state == DownloadStateEnum.imported
+                    else r.book.updated_at
+                ),
+                reverse=True,
             )
         case _:  # "added" - newest first
             return sorted(results, key=lambda r: r.book.updated_at, reverse=True)

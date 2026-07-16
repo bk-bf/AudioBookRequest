@@ -1,6 +1,7 @@
 {#def
     downloaded: bool = False,
     queue: DownloadQueueItem | None = None,
+    requesters: str = "",
 #}
 
 {% if queue %}
@@ -27,4 +28,7 @@
     <span class="badge badge-success">Downloaded</span>
 {% else %}
     <span class="text-xs opacity-40">—</span>
+{% endif %}
+{% if requesters and (downloaded or (queue and queue.state.value.__eq__("imported"))) %}
+    <span class="badge badge-ghost badge-sm" title="Requested by">{{ requesters }}</span>
 {% endif %}

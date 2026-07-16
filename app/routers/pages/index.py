@@ -1,15 +1,18 @@
+import random
+from datetime import date
 from typing import Annotated
 
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Query, Security
 from pydantic import BaseModel
 from sqlalchemy.sql.functions import count
-from sqlmodel import Session, select
+from sqlmodel import Session, col, desc, select
 
+from app.internal.audible.extended import get_extended_metadata
 from app.internal.audible.types import audible_region_type, get_region_from_settings
 from app.internal.audiobookshelf.client import flag_abs_downloaded_items
 from app.internal.auth.authentication import ABRAuth, DetailedUser
-from app.internal.models import AudiobookRequest, AudiobookWithRequests
+from app.internal.models import Audiobook, AudiobookRequest, AudiobookWithRequests
 from app.internal.ranking.quality import quality_config
 from app.routers.api.recommendations import (
     get_category_recommendations as api_get_category_recommendations,
@@ -57,6 +60,72 @@ def read_root(
         region=get_region_from_settings(),
         auto_download=quality_config.get_auto_download(session),
         show_popular=show_popular,
+    )
+
+
+@router.get("/hx-hero")
+async def get_hero(
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    user: Annotated[DetailedUser, Security(ABRAuth())],
+):
+    """Featured book of the day, from Audible's popular list."""
+    try:
+        books = await api_get_fallback_recommendations(
+            session=session,
+            client_session=client_session,
+            user=user,
+            limit=12,
+            audible_region=None,
+        )
+    except Exception:
+        books = []
+    if not books:
+        return catalog_response("Index.Empty")
+    await flag_abs_downloaded_items(session, client_session, books)
+    hero = books[date.today().toordinal() % len(books)]
+    extended = await get_extended_metadata(client_session, hero.book.asin)
+    return catalog_response(
+        "Index.Hero",
+        hero=hero,
+        extended=extended,
+        user=user,
+        region=get_region_from_settings(),
+        auto_start_download=quality_config.get_auto_download(session),
+    )
+
+
+@router.get("/hx-recent-library")
+async def get_recently_added(
+    session: Annotated[Session, Depends(get_session)],
+    user: Annotated[DetailedUser, Security(ABRAuth())],
+    limit: int = 12,
+):
+    """Latest additions to the library."""
+    books = session.exec(
+        select(Audiobook)
+        .where(col(Audiobook.downloaded))
+        .order_by(desc(Audiobook.updated_at))
+        .limit(limit)
+    ).all()
+    reasons = [
+        _AudiobookReasonWrapper(
+            book=AudiobookWithRequests(
+                book=b, requests=b.requests, username=user.username
+            ),
+            reason="Recently added",
+        )
+        for b in books
+    ]
+    return catalog_response(
+        "Index.PopularSection",
+        title="Recently Added",
+        reasons=reasons,
+        user=user,
+        description="Latest additions to your library",
+        view_more="/wishlist/downloaded",
+        region=get_region_from_settings(),
+        auto_start_download=quality_config.get_auto_download(session),
     )
 
 
@@ -112,10 +181,10 @@ async def get_popular_recommendations(
 
     return catalog_response(
         "Index.PopularSection",
-        title="Popular",
+        title="Popular on this server",
         user=user,
         reasons=result,
-        description="The most popular books on the instance",
+        description="Most requested by users on this server",
         empty="No popular recommendations available at this time. Request some books to start getting recommendations.",
         region=get_region_from_settings(),
         auto_start_download=quality_config.get_auto_download(session),
@@ -135,6 +204,9 @@ async def get_category_recommendations(
         user=user,
         audible_region=audible_region,
     )
+
+    rng = random.Random(date.today().toordinal())
+    result = {k: rng.sample(v, len(v)) for k, v in result.items()}
 
     all_category_books = [b for books in result.values() for b in books]
     await flag_abs_downloaded_items(session, client_session, all_category_books)
@@ -222,9 +294,10 @@ async def get_fallback_recommendations(
 
     return catalog_response(
         "Index.PopularSection",
+        title="Popular on Audible",
         reasons=reasons,
         user=user,
-        description="Popular books from Audible",
+        description="What everyone is listening to right now",
         empty="No fallback recommendations available at this time.",
         region=region,
         auto_start_download=quality_config.get_auto_download(session),

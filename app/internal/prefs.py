@@ -8,7 +8,7 @@ from app.util.log import logger
 
 WishlistPage = Literal["wishlist", "downloaded", "manual"]
 
-SORT_VALUES = ("added", "title", "author", "requester")
+SORT_VALUES = ("added", "title", "author", "requester", "downloaded_at", "imported")
 
 PrefDict = dict[str, dict[str, str]]
 

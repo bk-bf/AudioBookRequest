@@ -1,0 +1,76 @@
+{#def
+    hero: AudiobookWithRequests,
+    user: DetailedUser,
+    region: audible_region_type,
+    extended: ExtendedMetadata | None = None,
+    auto_start_download: bool = False,
+#}
+
+{% set book = hero.book %}
+<div class="w-full max-w-7xl mb-8">
+    <div class="relative overflow-hidden rounded-2xl shadow-xl min-h-64">
+        {% if book.cover_image %}
+            <img class="absolute inset-0 w-full h-full object-cover blur-3xl opacity-40 scale-125"
+                 src="{{ book.cover_image }}"
+                 alt="" />
+        {% endif %}
+        <div class="absolute inset-0 bg-gradient-to-r from-base-100/90 via-base-100/60 to-base-100/30">
+        </div>
+        <div class="relative flex flex-col sm:flex-row gap-6 p-6 sm:p-10 items-start">
+            <a preload
+               href="{{ base_url }}/book/{{ book.asin }}"
+               class="block w-36 h-36 sm:w-52 sm:h-52 shrink-0 rounded-xl overflow-hidden shadow-lg shadow-black/40">
+                {% if book.cover_image %}
+                    <img class="object-cover w-full h-full"
+                         width="208"
+                         height="208"
+                         src="{{ book.cover_image }}"
+                         alt="{{ book.title }}" />
+                {% endif %}
+            </a>
+            <div class="flex flex-col gap-2 min-w-0">
+                <span class="text-xs uppercase tracking-widest opacity-60">Featured today</span>
+                <a preload
+                   href="{{ base_url }}/book/{{ book.asin }}"
+                   class="text-2xl sm:text-4xl font-bold leading-tight line-clamp-2">{{ book.title }}</a>
+                <div class="text-sm opacity-80">
+                    {{ book.authors | join(", ") }}
+                    {% if book.runtime_length_hrs %}
+                        · {{ book.runtime_length_hrs }}h
+                    {% endif %}
+                    {% if extended and extended.rating_value %}
+                        · <span class="text-warning">★</span> {{ extended.rating_value }}
+                    {% endif %}
+                </div>
+                {% if extended and extended.genres %}
+                    <div class="flex flex-wrap gap-1">
+                        {% for genre in extended.genres[:4] %}
+                            <span class="badge badge-outline badge-sm">{{ genre }}</span>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                {% if extended and extended.publisher_summary %}
+                    <div class="text-sm opacity-80 line-clamp-3 max-w-2xl">
+                        {{ extended.publisher_summary | striptags }}
+                    </div>
+                {% endif %}
+                <div class="flex flex-wrap gap-2 pt-2">
+                    {% if book.downloaded %}
+                        <span class="badge badge-success py-3">In your library</span>
+                    {% elif user.can_download() %}
+                        <button class="btn btn-primary btn-sm"
+                                hx-post="{{ base_url }}/book/{{ book.asin }}/hx-auto-download"
+                                hx-disabled-elt="this"
+                                hx-swap="none">
+                            <icons.Download />
+                            Auto Download
+                        </button>
+                    {% endif %}
+                    <a preload class="btn btn-sm" href="{{ base_url }}/book/{{ book.asin }}">
+                        Details
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -93,6 +93,61 @@
         </div>
 
         <Book.Status user={{ user }} book={{ book }} queue_items={{ queue_items }} />
+
+        {% if user.is_admin() and (book.downloaded or queue_items) %}
+            <div class="flex flex-col gap-2">
+                <h2 class="text-lg text-error font-bold">
+                    Danger Zone
+                </h2>
+                <button type="button"
+                        class="btn btn-error w-fit"
+                        onclick="delete_files_modal.showModal()">
+                    Delete Files
+                </button>
+                <dialog id="delete_files_modal" class="modal">
+                    <div class="modal-box">
+                        <h3 class="text-lg font-bold">
+                            Delete files for
+                            <span class="italic">{{ book.title }}</span>?
+                        </h3>
+                        {% if book.downloaded_path %}
+                            <p class="py-2 text-sm font-mono break-all opacity-70">
+                                {{ book.downloaded_path }}
+                            </p>
+                        {% endif %}
+                        <form class="flex flex-col gap-3"
+                              hx-post="{{ base_url }}/book/{{ book.asin }}/hx-delete-files"
+                              hx-disabled-elt="#delete-files-button"
+                              hx-swap="none">
+                            <label class="label cursor-pointer justify-start gap-2">
+                                <input type="checkbox"
+                                       name="remove_torrent"
+                                       class="checkbox checkbox-sm"
+                                       checked />
+                                <span class="label-text">Also remove the torrent + data from qBittorrent</span>
+                            </label>
+                            <label class="label cursor-pointer justify-start gap-2">
+                                <input type="checkbox" name="remove_request" class="checkbox checkbox-sm" />
+                                <span class="label-text">Also remove from wishlist</span>
+                            </label>
+                            <p class="text-xs opacity-60">
+                                If the book stays on the wishlist and Auto Download is enabled, it may be
+                                re-downloaded automatically on the next sweep. Keeping the torrent in
+                                qBittorrent will cause it to be re-imported.
+                            </p>
+                            <button id="delete-files-button" type="submit" class="btn btn-error">
+                                Delete
+                            </button>
+                        </form>
+                    </div>
+                    <form method="dialog" class="modal-backdrop">
+                        <button>
+                            close
+                        </button>
+                    </form>
+                </dialog>
+            </div>
+        {% endif %}
     </main>
 </div>
 

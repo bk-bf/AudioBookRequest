@@ -283,6 +283,9 @@ async def abs_book_exists(
     norm_authors = {_normalize(a) for a in book.authors}
 
     for it in candidates:
+        # An exact ASIN match is conclusive on its own
+        if it.media.metadata.asin and it.media.metadata.asin == book.asin:
+            return True
         # ABS search returns different shapes, try best-effort
         title = it.media.metadata.title
         if not title:

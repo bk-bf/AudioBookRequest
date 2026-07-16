@@ -18,6 +18,7 @@ from app.internal.audiobookshelf.types import (
     ABSPodcastItem,
 )
 from app.internal.models import Audiobook
+from app.util.cache import SimpleCache
 from app.util.connection import USER_AGENT
 from app.util.db import get_session
 from app.util.log import logger
@@ -296,25 +297,45 @@ async def abs_book_exists(
     return False
 
 
+_abs_exists_cache: SimpleCache[bool, str] = SimpleCache()
+_ABS_EXISTS_TTL_SECONDS = 60 * 10
+
+
 async def abs_mark_downloaded_flags(
     session: Session,
     client_session: ClientSession,
     books: list[Audiobook],
 ) -> None:
+    """Flag books that already exist in the Audiobookshelf library as downloaded.
+
+    Safe for both persistent and transient Audiobook objects; results are
+    cached for a few minutes so page renders don't hammer ABS."""
     if not abs_config.get_check_downloaded(session):
+        return
+    if not abs_config.get_base_url(session) or not abs_config.get_api_token(session):
         return
     # Only check books not already marked downloaded
     to_check = [b for b in books if not b.downloaded]
     # Limit to avoid flooding ABS
     to_check = to_check[:25]
+    if not to_check:
+        return
 
     async def _check_and_mark(b: Audiobook):
         try:
-            exists = await abs_book_exists(session, client_session, b)
+            exists = _abs_exists_cache.get(
+                _ABS_EXISTS_TTL_SECONDS, f"abs-exists:{b.asin}"
+            )
+            if exists is None:
+                exists = await abs_book_exists(session, client_session, b)
+                _abs_exists_cache.set(exists, f"abs-exists:{b.asin}")
             logger.debug("ABS: exist check", asin=b.asin, exists=exists)
             if exists:
                 b.downloaded = True
-                session.add(b)
+                # merge: the book may be a transient Audible search result that
+                # isn't attached to the session (or not in the table yet)
+                merged = session.merge(b)
+                merged.downloaded = True
         except Exception as e:
             logger.debug("ABS: failed exist check", asin=b.asin, error=str(e))
 

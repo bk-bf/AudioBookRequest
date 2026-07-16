@@ -45,38 +45,41 @@
                         <td>
                             {{ n.url }}
                         </td>
-                        <td class="grid grid-cols-2 min-w-32 gap-1">
-                            <button title="Test"
-                                    class="btn btn-square"
-                                    hx-post="{{ base_url }}/settings/notifications/hx-test/{{ n.id }}"
-                                    hx-disabled-elt="this">
-                                <icons.TestPipe />
-                            </button>
-                            <button title="Edit"
-                                    class="btn btn-square"
-                                    x-on:click="edit === '{{ n.id }}' ?edit=null: edit='{{ n.id }}'">
-                                <icons.Pencil />
-                            </button>
-                            <button title="{{ 'Enabled' if n.enabled else 'Disabled' }}"
-                                    class="btn btn-square {{ 'btn-success' if n.enabled else 'btn-error' }}"
-                                    hx-patch="{{ base_url }}/settings/notifications/hx-enable/{{ n.id }}"
-                                    hx-disabled-elt="this"
-                                    hx-target="#notification-list"
-                                    hx-swap="outerHTML">
-                                {% if n.enabled %}
-                                    <icons.Checkmark />
-                                {% else %}
-                                    <icons.XMark />
-                                {% endif %}
-                            </button>
-                            <button title="Delete"
-                                    class="btn btn-error btn-square"
-                                    hx-delete="{{ base_url }}/settings/notifications/hx-delete/{{ n.id }}"
-                                    hx-target="#notification-list"
-                                    hx-swap="outerHTML"
-                                    hx-confirm="Are you sure you want to delete this notification? ({{ n.name }})">
-                                <icons.Trash />
-                            </button>
+                        <td>
+                            <div class="grid grid-cols-2 min-w-32 gap-1">
+
+                                <button title="Test"
+                                        class="btn btn-square"
+                                        hx-post="{{ base_url }}/settings/notifications/hx-test/{{ n.id }}"
+                                        hx-disabled-elt="this">
+                                    <icons.TestPipe />
+                                </button>
+                                <button title="Edit"
+                                        class="btn btn-square"
+                                        x-on:click="edit === '{{ n.id }}' ?edit=null: edit='{{ n.id }}'">
+                                    <icons.Pencil />
+                                </button>
+                                <button title="{{ 'Enabled' if n.enabled else 'Disabled' }}"
+                                        class="btn btn-square {{ 'btn-success' if n.enabled else 'btn-error' }}"
+                                        hx-patch="{{ base_url }}/settings/notifications/hx-enable/{{ n.id }}"
+                                        hx-disabled-elt="this"
+                                        hx-target="#notification-list"
+                                        hx-swap="outerHTML">
+                                    {% if n.enabled %}
+                                        <icons.Checkmark />
+                                    {% else %}
+                                        <icons.XMark />
+                                    {% endif %}
+                                </button>
+                                <button title="Delete"
+                                        class="btn btn-error btn-square"
+                                        hx-delete="{{ base_url }}/settings/notifications/hx-delete/{{ n.id }}"
+                                        hx-target="#notification-list"
+                                        hx-swap="outerHTML"
+                                        hx-confirm="Are you sure you want to delete this notification? ({{ n.name }})">
+                                    <icons.Trash />
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 {% endfor %}

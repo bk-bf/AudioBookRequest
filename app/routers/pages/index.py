@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Sequence
 
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Query, Security
@@ -7,8 +7,10 @@ from sqlalchemy.sql.functions import count
 from sqlmodel import Session, select
 
 from app.internal.audible.types import audible_region_type, get_region_from_settings
+from app.internal.audiobookshelf.client import abs_mark_downloaded_flags
 from app.internal.auth.authentication import ABRAuth, DetailedUser
-from app.internal.models import AudiobookRequest, AudiobookWithRequests
+from app.internal.models import Audiobook, AudiobookRequest, AudiobookWithRequests
+from app.util.log import logger
 from app.internal.ranking.quality import quality_config
 from app.routers.api.recommendations import (
     get_category_recommendations as api_get_category_recommendations,
@@ -36,6 +38,27 @@ from app.util.db import get_session
 from app.util.templates import catalog_response
 
 router = APIRouter()
+
+
+async def _flag_abs_downloaded(
+    session: Session,
+    client_session: ClientSession,
+    reasons: Sequence[object] | None,
+) -> None:
+    """Best-effort: mark recommendation cards whose book already exists in ABS."""
+    books: list[Audiobook] = []
+    for reason in reasons or []:
+        book: object = getattr(reason, "book", None)
+        if isinstance(book, AudiobookWithRequests):
+            books.append(book.book)
+        elif isinstance(book, Audiobook):
+            books.append(book)
+    if not books:
+        return
+    try:
+        await abs_mark_downloaded_flags(session, client_session, books)
+    except Exception as e:
+        logger.warning("ABS downloaded-check failed on homepage", error=str(e))
 
 
 @router.get("/")
@@ -75,6 +98,8 @@ async def get_user_recommendations(
         limit=limit,
     )
 
+    await _flag_abs_downloaded(session, client_session, result.recommendations)
+
     return catalog_response(
         "Index.PopularSection",
         title="For You",
@@ -91,6 +116,7 @@ async def get_user_recommendations(
 @router.get("/hx-popular")
 async def get_popular_recommendations(
     session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
     user: Annotated[DetailedUser, Security(ABRAuth())],
     min_requests: int = 1,
     limit: int = 10,
@@ -103,6 +129,8 @@ async def get_popular_recommendations(
         limit=limit,
         exclude_downloaded=exclude_downloaded,
     )
+
+    await _flag_abs_downloaded(session, client_session, result)
 
     return catalog_response(
         "Index.PopularSection",

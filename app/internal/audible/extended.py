@@ -68,7 +68,9 @@ async def get_extended_metadata(
 ) -> ExtendedMetadata | None:
     """Fetch display-only extended metadata for a book. Cached in memory,
     returns None on any failure so pages degrade gracefully."""
-    cached = extended_metadata_cache.get(_EXTENDED_TTL_SECONDS, asin)
+    cached = extended_metadata_cache.get(
+        _EXTENDED_TTL_SECONDS, f"audible-extended:{asin}"
+    )
     if cached:
         return cached
 
@@ -107,5 +109,5 @@ async def get_extended_metadata(
         series_sequence=series.sequence if series else None,
         genres=genres[:8],
     )
-    extended_metadata_cache.set(metadata, asin)
+    extended_metadata_cache.set(metadata, f"audible-extended:{asin}")
     return metadata

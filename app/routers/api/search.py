@@ -10,10 +10,12 @@ from app.internal.audible.types import (
     audible_regions,
     get_region_from_settings,
 )
+from app.internal.audiobookshelf.client import abs_mark_downloaded_flags
 from app.internal.auth.authentication import AnyAuth, DetailedUser
 from app.internal.models import Audiobook, AudiobookWithRequests
 from app.util.connection import get_connection
 from app.util.db import get_session
+from app.util.log import logger
 
 router = APIRouter(prefix="/search", tags=["Search"])
 
@@ -47,6 +49,12 @@ async def search_books(
     merged: list[Audiobook] = []
     for res in results:
         merged.append(session.merge(res))
+
+    # flag books that already exist in the Audiobookshelf library
+    try:
+        await abs_mark_downloaded_flags(session, client_session, merged)
+    except Exception as e:
+        logger.warning("ABS downloaded-check failed during search", error=str(e))
 
     return [
         AudiobookWithRequests(

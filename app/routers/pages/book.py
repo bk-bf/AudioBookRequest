@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated
 
 from aiohttp import ClientSession
-from fastapi import APIRouter, Depends, Form, HTTPException, Security
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Security
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, desc, select
 
@@ -18,7 +18,8 @@ from app.internal.audiobookshelf.client import (
 )
 from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.download_client.config import dc_config
-from app.internal.download_client.grab import get_download_client
+from app.internal.download_client.grab import get_active_queue_item, get_download_client
+from app.internal.query import background_auto_download
 from app.internal.models import (
     Audiobook,
     AudiobookRequest,
@@ -28,7 +29,6 @@ from app.internal.models import (
     GroupEnum,
 )
 from app.internal.ranking.quality import quality_config
-from app.routers.api.requests import start_auto_download_endpoint
 from app.util.connection import get_connection
 from app.util.db import get_session
 from app.util.log import logger
@@ -96,6 +96,24 @@ async def book_detail(
         region=get_region_from_settings(),
         extended=extended,
         abs_item_url=abs_item_url,
+        active_item=get_active_queue_item(session, asin),
+    )
+
+
+@router.get("/{asin}/hx-action")
+async def book_action(
+    asin: str,
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    user: Annotated[DetailedUser, Security(ABRAuth())],
+):
+    """Polled while a download is active to keep the action pill fresh."""
+    book, _, _ = await _get_book_context(session, client_session, asin)
+    return catalog_response(
+        "Book.ActionButton",
+        user=user,
+        book=book,
+        active=get_active_queue_item(session, asin),
     )
 
 
@@ -154,10 +172,56 @@ async def book_auto_download(
     asin: str,
     session: Annotated[Session, Depends(get_session)],
     client_session: Annotated[ClientSession, Depends(get_connection)],
+    background_task: BackgroundTasks,
     user: Annotated[DetailedUser, Security(ABRAuth(GroupEnum.trusted))],
 ):
-    await start_auto_download_endpoint(asin, session, client_session, user)
-    raise ToastException("Download started", "success", cause_refresh=True)
+    """Add the book to the wishlist (if needed) and queue an auto-download."""
+    book, _, _ = await _get_book_context(session, client_session, asin)
+    if book.downloaded:
+        raise ToastException("Already downloaded", "info")
+    if get_active_queue_item(session, asin):
+        raise ToastException("Already downloading", "info")
+
+    if not session.exec(
+        select(AudiobookRequest).where(
+            AudiobookRequest.asin == asin,
+            AudiobookRequest.user_username == user.username,
+        )
+    ).first():
+        session.add(AudiobookRequest(asin=asin, user_username=user.username))
+        session.commit()
+
+    background_task.add_task(background_auto_download, asin)
+    raise ToastException(
+        "Added to wishlist — auto-download queued", "success", cause_refresh=True
+    )
+
+
+@router.post("/{asin}/hx-abort/{item_id}")
+async def book_abort_download(
+    asin: str,
+    item_id: uuid.UUID,
+    session: Annotated[Session, Depends(get_session)],
+    user: Annotated[DetailedUser, Security(ABRAuth(GroupEnum.trusted))],
+):
+    """Abort an active download: remove the torrent + data and the queue row."""
+    _ = user
+    item = session.get(DownloadQueueItem, item_id)
+    if not item or item.asin != asin:
+        raise HTTPException(status_code=404, detail="Download not found")
+    client = get_download_client(session)
+    if client and item.download_id:
+        try:
+            await client.remove(item.download_id, delete_files=True)
+        except Exception as e:
+            logger.warning(
+                "Failed to remove torrent on abort",
+                download_id=item.download_id,
+                error=str(e),
+            )
+    session.delete(item)
+    session.commit()
+    raise ToastException("Download aborted", "success", cause_refresh=True)
 
 
 def _delete_imported_files(session: Session, downloaded_path: str) -> bool:

@@ -4,14 +4,19 @@
     page: str,
     counts: WishlistCounts,
     update_tablist = False, # performs oob replacement for the tablist
+    sort_by: str = "added",
+    requested_by: str = "",
+    usernames: list[str] = [],
 #}
 
 {% set active_downloads = results | selectattr("queue") | map(attribute="queue") | selectattr("state.is_active") | list %}
 <div id="book-table-body"
-     {% if active_downloads %}hx-get="{{ base_url }}/wishlist/hx-poll?page={{ page }}" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+     {% if active_downloads %}hx-get="{{ base_url }}/wishlist/hx-poll?page={{ page }}&sort_by={{ sort_by }}&requested_by={{ requested_by }}" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
     {% if update_tablist %}
         <Wishlist.Tablist page={{ page }} counts={{ counts }} />
     {% endif %}
+
+    <WishlistFilterBar page={{ page }} user={{ user }} sort_by={{ sort_by }} requested_by={{ requested_by }} usernames={{ usernames }} endpoint="/wishlist/hx-poll?page={{ page }}" bulk={{ True }} />
 
     {% if not results %}
         <div role="alert" class="alert my-2">
@@ -66,7 +71,13 @@
                         {% set book = result.book %}
                         <tr class="text-xs lg:text-sm" id="{{ book.asin }}">
                             <th>
-                                {{ loop.index }}
+                                <label class="flex flex-col items-center gap-1">
+                                    {{ loop.index }}
+                                    <input type="checkbox"
+                                           name="sel_asin"
+                                           value="{{ book.asin }}"
+                                           class="checkbox checkbox-sm bulk-check" />
+                                </label>
                             </th>
                             <td>
                                 <a preload
@@ -199,7 +210,11 @@
         <div class="md:hidden flex flex-col divide-y divide-base-200">
             {% for result in results %}
                 {% set book = result.book %}
-                <div class="flex gap-3 py-3" id="m-{{ book.asin }}">
+                <div class="flex gap-2 py-3 items-start" id="m-{{ book.asin }}">
+                    <input type="checkbox"
+                           name="sel_asin"
+                           value="{{ book.asin }}"
+                           class="checkbox checkbox-sm bulk-check mt-8" />
                     <a preload
                        href="{{ base_url }}/book/{{ book.asin }}"
                        class="block size-20 shrink-0 rounded overflow-hidden">

@@ -202,6 +202,7 @@ class DownloadQueueItem(BaseSQLModel, table=True):
     asin: str | None = Field(default=None, index=True)
     manual_request_id: uuid.UUID | None = Field(default=None, index=True)
     download_id: str = Field(index=True)  # torrent info-hash (lowercase)
+    source_guid: str | None = None  # prowlarr source guid, for retry exclusion
     client: str = "qbittorrent"
     source_title: str
     indexer: str

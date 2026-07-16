@@ -1,0 +1,106 @@
+{#def
+    page: str,
+    user: DetailedUser,
+    sort_by: str = "added",
+    requested_by: str = "",
+    usernames: list[str] = [],
+    endpoint: str = "",
+    bulk: bool = False,
+#}
+
+<div id="filter-bar" class="flex flex-wrap items-center gap-2 pb-2">
+    <select name="sort_by"
+            class="select select-sm w-36"
+            title="Sort by"
+            hx-get="{{ base_url }}{{ endpoint }}"
+            hx-include="#filter-bar select"
+            hx-target="#book-table-body"
+            hx-swap="outerHTML">
+        <option value="added" {% if sort_by.__eq__("added") %}selected{% endif %}>
+            Date added
+        </option>
+        <option value="title" {% if sort_by.__eq__("title") %}selected{% endif %}>
+            Title A–Z
+        </option>
+        <option value="author" {% if sort_by.__eq__("author") %}selected{% endif %}>
+            Author A–Z
+        </option>
+        <option value="requester"
+                {% if sort_by.__eq__("requester") %}selected{% endif %}>
+            Requested by
+        </option>
+    </select>
+    {% if user.is_admin() and usernames %}
+        <select name="requested_by"
+                class="select select-sm w-36"
+                title="Filter by requester"
+                hx-get="{{ base_url }}{{ endpoint }}"
+                hx-include="#filter-bar select"
+                hx-target="#book-table-body"
+                hx-swap="outerHTML">
+            <option value="">
+                Everyone
+            </option>
+            {% for name in usernames %}
+                <option value="{{ name }}"
+                        {% if requested_by.__eq__(name) %}selected{% endif %}>
+                    {{ name }}
+                </option>
+            {% endfor %}
+        </select>
+    {% endif %}
+    {% if bulk %}
+        <div class="flex items-center gap-2 ml-auto">
+            <label class="label cursor-pointer gap-1 text-xs">
+                <input type="checkbox"
+                       class="checkbox checkbox-sm"
+                       title="Select all"
+                       onclick="document.querySelectorAll('.bulk-check').forEach(c => c.checked = this.checked)" />
+                All
+            </label>
+            <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-sm">
+                    Bulk ▾
+                </div>
+                <ul tabindex="0"
+                    class="dropdown-content menu bg-base-200 rounded-box z-50 w-52 p-2 shadow-xl">
+                    {% if user.can_download() %}
+                        <li>
+                            <button hx-post="{{ base_url }}/wishlist/hx-bulk/download?page={{ page }}"
+                                    hx-include=".bulk-check:checked"
+                                    hx-target="#book-table-body"
+                                    hx-swap="outerHTML"
+                                    hx-disabled-elt="this">
+                                <icons.Download />
+                                Download selected
+                            </button>
+                        </li>
+                    {% endif %}
+                    {% if user.is_admin() %}
+                        <li>
+                            <button hx-post="{{ base_url }}/wishlist/hx-bulk/mark?page={{ page }}"
+                                    hx-include=".bulk-check:checked"
+                                    hx-target="#book-table-body"
+                                    hx-swap="outerHTML"
+                                    hx-disabled-elt="this">
+                                <icons.Checkmark />
+                                Mark as downloaded
+                            </button>
+                        </li>
+                    {% endif %}
+                    <li>
+                        <button hx-post="{{ base_url }}/wishlist/hx-bulk/delete?page={{ page }}"
+                                hx-include=".bulk-check:checked"
+                                hx-confirm="Remove the selected books from the wishlist?"
+                                hx-target="#book-table-body"
+                                hx-swap="outerHTML"
+                                hx-disabled-elt="this">
+                            <icons.Ban />
+                            Remove selected
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    {% endif %}
+</div>

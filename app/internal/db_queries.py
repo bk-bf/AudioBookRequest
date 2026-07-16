@@ -62,10 +62,34 @@ def get_wishlist_counts(session: Session, user: User | None = None) -> WishlistC
     )
 
 
+def sort_wishlist_results(
+    results: list[AudiobookWishlistResult], sort_by: str
+) -> list[AudiobookWishlistResult]:
+    match sort_by:
+        case "title":
+            return sorted(results, key=lambda r: r.book.title.lower())
+        case "author":
+            return sorted(
+                results,
+                key=lambda r: r.book.authors[0].lower() if r.book.authors else "~",
+            )
+        case "requester":
+            return sorted(
+                results,
+                key=lambda r: (
+                    r.requests[0].user_username.lower() if r.requests else "~"
+                ),
+            )
+        case _:  # "added" - newest first
+            return sorted(results, key=lambda r: r.book.updated_at, reverse=True)
+
+
 def get_wishlist_results(
     session: Session,
     username: str | None = None,
     response_type: Literal["all", "downloaded", "not_downloaded"] = "all",
+    sort_by: str = "added",
+    requested_by: str = "",
 ) -> list[AudiobookWishlistResult]:
     """
     Gets the books that have been requested. If a username is given only the books requested by that
@@ -121,7 +145,7 @@ def get_wishlist_results(
             if item.asin:
                 queue_map[item.asin] = item  # newest wins
 
-    return [
+    wishlist_results = [
         AudiobookWishlistResult(
             book=book,
             requests=book.requests,
@@ -129,16 +153,47 @@ def get_wishlist_results(
         )
         for book in results
     ]
+    if requested_by:
+        wishlist_results = [
+            r
+            for r in wishlist_results
+            if any(req.user_username == requested_by for req in r.requests)
+        ]
+    return sort_wishlist_results(wishlist_results, sort_by)
 
 
 def get_all_manual_requests(
-    session: Session, user: User
+    session: Session,
+    user: User,
+    sort_by: str = "added",
+    requested_by: str = "",
 ) -> Sequence[ManualBookRequest]:
-    return session.exec(
-        select(ManualBookRequest)
-        .where(
-            user.is_admin() or ManualBookRequest.user_username == user.username,
-            col(ManualBookRequest.user_username).is_not(None),
-        )
-        .order_by(asc(ManualBookRequest.downloaded))
-    ).all()
+    results = list(
+        session.exec(
+            select(ManualBookRequest)
+            .where(
+                user.is_admin() or ManualBookRequest.user_username == user.username,
+                col(ManualBookRequest.user_username).is_not(None),
+            )
+            .order_by(asc(ManualBookRequest.downloaded))
+        ).all()
+    )
+    if requested_by:
+        results = [r for r in results if r.user_username == requested_by]
+    match sort_by:
+        case "title":
+            results.sort(key=lambda r: r.title.lower())
+        case "author":
+            results.sort(key=lambda r: r.authors[0].lower() if r.authors else "~")
+        case "requester":
+            results.sort(key=lambda r: r.user_username.lower())
+        case _:
+            results.sort(key=lambda r: r.updated_at, reverse=True)
+    return results
+
+
+def get_requesting_usernames(session: Session) -> list[str]:
+    """Distinct usernames that have requested something (for filter dropdowns)."""
+    normal = session.exec(select(AudiobookRequest.user_username).distinct()).all()
+    manual = session.exec(select(ManualBookRequest.user_username).distinct()).all()
+    return sorted({*normal, *manual})

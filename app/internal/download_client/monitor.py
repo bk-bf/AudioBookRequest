@@ -32,6 +32,37 @@ MISSING_GRACE_SECONDS = 300
 _last_auto_attempt: dict[str, float] = {}
 
 
+async def _handle_failed_item(session: Session, item: DownloadQueueItem, reason: str):
+    """A download failed: clean the torrent + data out of the client and
+    retry with the next-best source (failed guids are excluded on retry)."""
+    from app.internal.query import background_auto_download
+
+    item.state = DownloadStateEnum.error
+    item.error = reason
+    session.add(item)
+    session.commit()
+    client = get_download_client(session)
+    if client and item.download_id:
+        try:
+            await client.remove(item.download_id, delete_files=True)
+        except Exception as e:
+            logger.warning(
+                "Failed to remove failed torrent from client",
+                download_id=item.download_id,
+                error=str(e),
+            )
+    logger.info(
+        "Download failed, retrying with next-best source",
+        title=item.source_title,
+        reason=reason,
+        asin=item.asin,
+    )
+    if item.asin:
+        asyncio.create_task(background_auto_download(item.asin))
+    elif item.manual_request_id:
+        asyncio.create_task(background_auto_download(str(item.manual_request_id)))
+
+
 def _active_items(session: Session) -> list[DownloadQueueItem]:
     return list(
         session.exec(
@@ -94,14 +125,18 @@ async def poll_download_queue():
                     item.save_path = status.content_path
 
                 if status.state == DownloadStateEnum.error:
-                    item.state = DownloadStateEnum.error
-                    item.error = "Download client reports an error"
-                    session.add(item)
+                    await _handle_failed_item(
+                        session, item, "Download client reports an error"
+                    )
                 elif status.state == DownloadStateEnum.completed:
                     item.state = DownloadStateEnum.completed
                     session.add(item)
                     session.commit()
-                    await import_queue_item(session, client_session, item)
+                    imported = await import_queue_item(session, client_session, item)
+                    if not imported:
+                        await _handle_failed_item(
+                            session, item, item.error or "Import failed"
+                        )
                 else:
                     item.state = status.state
                     session.add(item)

@@ -9,6 +9,7 @@ from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.db_queries import get_wishlist_counts, get_wishlist_results
 from app.internal.models import GroupEnum
 from app.routers.api.requests import mark_downloaded as api_mark_downloaded
+from app.routers.pages.wishlist.common import render_wishlist
 from app.util.db import get_session
 from app.util.templates import catalog_response
 
@@ -19,15 +20,28 @@ router = APIRouter(prefix="/downloaded")
 async def downloaded(
     session: Annotated[Session, Depends(get_session)],
     user: Annotated[DetailedUser, Security(ABRAuth())],
+    sort_by: str | None = None,
+    requested_by: str | None = None,
 ):
+    from app.internal.db_queries import get_requesting_usernames
+    from app.internal.prefs import resolve_list_prefs
+
+    sort, req_by = resolve_list_prefs(
+        session, user.username, "downloaded", sort_by, requested_by
+    )
     username = None if user.is_admin() else user.username
-    results = get_wishlist_results(session, username, "downloaded")
+    results = get_wishlist_results(
+        session, username, "downloaded", sort_by=sort, requested_by=req_by
+    )
     counts = get_wishlist_counts(session, user)
     return catalog_response(
         "Wishlist.Downloaded",
         user=user,
         results=results,
         counts=counts,
+        sort_by=sort,
+        requested_by=req_by,
+        usernames=get_requesting_usernames(session),
     )
 
 
@@ -40,18 +54,7 @@ async def update_downloaded(
 ):
     await api_mark_downloaded(asin, session, background_task, admin_user)
 
-    username = None if admin_user.is_admin() else admin_user.username
-    results = get_wishlist_results(session, username, "not_downloaded")
-    counts = get_wishlist_counts(session, admin_user)
-
     if abs_config.is_valid(session):
         background_task.add_task(background_abs_trigger_scan)
 
-    return catalog_response(
-        "Wishlist.Wishlist",
-        user=admin_user,
-        results=results,
-        page="wishlist",
-        counts=counts,
-        update_tablist=True,
-    )
+    return render_wishlist(session, admin_user, "wishlist")

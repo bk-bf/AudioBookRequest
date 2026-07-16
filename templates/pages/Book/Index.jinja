@@ -6,6 +6,7 @@
     region: audible_region_type,
     extended: ExtendedMetadata | None = None,
     abs_item_url: str | None = None,
+    active_item: DownloadQueueItem | None = None,
 #}
 
 <BaseLayout title={{ book.title }} user={{ user }}>
@@ -113,15 +114,7 @@
                             Listen in Audiobookshelf
                         </a>
                     {% endif %}
-                    {% if user.can_download() and not book.downloaded %}
-                        <button class="btn btn-primary btn-sm"
-                                hx-post="{{ base_url }}/book/{{ book.asin }}/hx-auto-download"
-                                hx-disabled-elt="this"
-                                hx-swap="none">
-                            <icons.Download />
-                            Download Best Source
-                        </button>
-                    {% endif %}
+                    <Book.ActionButton user={{ user }} book={{ book }} active={{ active_item }} />
                     {% if user.is_admin() %}
                         <a preload
                            class="btn btn-sm"

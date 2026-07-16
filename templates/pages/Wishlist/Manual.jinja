@@ -2,10 +2,13 @@
     results: list[ManualBookRequest],
     user: DetailedUser,
     counts: WishlistCounts,
+    sort_by: str = "added",
+    requested_by: str = "",
+    usernames: list[str] = [],
 #}
 
 <WishlistLayout title="Manual" user={{ user }} counts={{ counts }} page="manual">
 <div class="overflow-x-auto h-[75vh] border-b pb-2 border-b-base-200">
-    <Wishlist.ManualWishlist results={{ results }} user={{ user }} counts={{ counts }} />
+    <Wishlist.ManualWishlist results={{ results }} user={{ user }} counts={{ counts }} sort_by={{ sort_by }} requested_by={{ requested_by }} usernames={{ usernames }} />
 </div>
 </WishlistLayout>

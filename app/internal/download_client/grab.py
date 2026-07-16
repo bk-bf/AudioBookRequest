@@ -133,6 +133,7 @@ async def grab_via_client(
         asin=book.asin if isinstance(book, Audiobook) else None,
         manual_request_id=book.id if isinstance(book, ManualBookRequest) else None,
         download_id=info_hash,
+        source_guid=source.guid,
         client=dc_config.get_type(session),
         source_title=source.title,
         indexer=source.indexer,

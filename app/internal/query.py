@@ -10,14 +10,39 @@ from sqlmodel import Session
 
 from app.internal.audiobookshelf.client import abs_trigger_scan
 from app.internal.audiobookshelf.config import abs_config
-from app.internal.models import Audiobook, ManualBookRequest, ProwlarrSource
+from app.internal.download_client.grab import get_active_queue_item
+from app.internal.models import (
+    Audiobook,
+    DownloadQueueItem,
+    DownloadStateEnum,
+    ManualBookRequest,
+    ProwlarrSource,
+)
 from app.internal.prowlarr.prowlarr import query_prowlarr, start_download
 from app.internal.prowlarr.util import prowlarr_config
 from app.internal.ranking.download_ranking import rank_sources
 from app.util.db import get_session
 from app.util.log import logger
+from sqlmodel import col, select
 
 querying: set[str] = set()
+MAX_AUTO_RETRIES = 3
+
+
+def get_failed_source_guids(session: Session, asin_or_uuid: str) -> set[str]:
+    """Guids of sources that already failed for this book (used to pick the
+    next-best source on retry)."""
+    try:
+        uuid_obj = uuid.UUID(asin_or_uuid)
+        clause = col(DownloadQueueItem.manual_request_id) == uuid_obj
+    except ValueError:
+        clause = col(DownloadQueueItem.asin) == asin_or_uuid
+    items = session.exec(
+        select(DownloadQueueItem).where(
+            clause, col(DownloadQueueItem.state) == DownloadStateEnum.error
+        )
+    ).all()
+    return {i.source_guid for i in items if i.source_guid}
 
 
 @contextmanager
@@ -91,13 +116,34 @@ async def query_sources(
 
         # start download if requested
         if start_auto_download and not book.downloaded and len(ranked) > 0:
+            # never queue a duplicate while a download for this book is active
+            if get_active_queue_item(session, asin_or_uuid):
+                logger.info(
+                    "Auto-download skipped: already downloading", asin=asin_or_uuid
+                )
+                return QueryResult(sources=ranked, book=book, state="ok")
+
+            # skip sources that already failed for this book; give up after a few
+            failed_guids = get_failed_source_guids(session, asin_or_uuid)
+            if len(failed_guids) >= MAX_AUTO_RETRIES:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Too many failed download attempts for this book",
+                )
+            candidate = next((s for s in ranked if s.guid not in failed_guids), None)
+            if candidate is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="No untried sources left for this book",
+                )
+
             resp = await start_download(
                 session=session,
                 client_session=client_session,
-                guid=ranked[0].guid,
-                indexer_id=ranked[0].indexer_id,
+                guid=candidate.guid,
+                indexer_id=candidate.indexer_id,
                 asin_or_uuid=asin_or_uuid,
-                prowlarr_source=ranked[0],
+                prowlarr_source=candidate,
             )
             if resp.ok:
                 # Try to trigger an ABS scan to pick up new media
@@ -128,3 +174,29 @@ async def background_start_query(asin_or_uuid: str, auto_download: bool):
                 client_session=client_session,
                 start_auto_download=auto_download,
             )
+
+
+_auto_download_inflight: set[str] = set()
+
+
+async def background_auto_download(asin_or_uuid: str):
+    """Guarded background auto-download: dedupes concurrent attempts per book."""
+    if asin_or_uuid in _auto_download_inflight:
+        logger.info("Auto-download already in flight", asin=asin_or_uuid)
+        return
+    _auto_download_inflight.add(asin_or_uuid)
+    try:
+        with next(get_session()) as session:
+            async with ClientSession(
+                timeout=aiohttp.ClientTimeout(120)
+            ) as client_session:
+                await query_sources(
+                    asin_or_uuid=asin_or_uuid,
+                    session=session,
+                    client_session=client_session,
+                    start_auto_download=True,
+                )
+    except Exception as e:
+        logger.info("Background auto-download failed", asin=asin_or_uuid, error=str(e))
+    finally:
+        _auto_download_inflight.discard(asin_or_uuid)

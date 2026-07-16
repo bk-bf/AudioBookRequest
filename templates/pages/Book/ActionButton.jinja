@@ -1,0 +1,51 @@
+{#def
+    user: DetailedUser,
+    book: Audiobook,
+    active: DownloadQueueItem | None = None,
+#}
+
+{% if active %}
+    <div id="book-action"
+         class="flex items-center gap-2"
+         hx-get="{{ base_url }}/book/{{ book.asin }}/hx-action"
+         hx-trigger="every 5s"
+         hx-swap="outerHTML">
+        <span class="badge badge-info gap-2 py-3" title="{{ active.source_title }}">
+            {% if active.state.value.__eq__("downloading") %}
+                <progress class="progress progress-primary w-16"
+                          value="{{ active.progress_percent }}"
+                          max="100"></progress>
+                {{ active.progress_percent }}%
+            {% elif active.state.value.__eq__("completed") %}
+                Importing…
+            {% elif active.state.value.__eq__("stalled") %}
+                Stalled {{ active.progress_percent }}%
+            {% else %}
+                Queued
+            {% endif %}
+        </span>
+        {% if user.can_download() %}
+            <button class="btn btn-error btn-sm btn-square"
+                    title="Abort download"
+                    hx-post="{{ base_url }}/book/{{ book.asin }}/hx-abort/{{ active.id }}"
+                    hx-confirm="Abort this download and delete its data?"
+                    hx-disabled-elt="this"
+                    hx-swap="none">
+                <icons.XMark />
+            </button>
+        {% endif %}
+    </div>
+{% elif user.can_download() and not book.downloaded %}
+    <div id="book-action">
+        <button class="btn btn-primary btn-sm"
+                hx-post="{{ base_url }}/book/{{ book.asin }}/hx-auto-download"
+                hx-disabled-elt="this"
+                hx-swap="none">
+            <icons.Download />
+            Auto Download
+        </button>
+    </div>
+{% else %}
+    <div id="book-action">
+    </div>
+{% endif %}

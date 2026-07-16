@@ -162,6 +162,16 @@ class QbittorrentClient(DownloadClient):
                 headers={"User-Agent": USER_AGENT},
             ) as r:
                 text = await r.text()
+                if r.status == 409:
+                    # Torrent already in the client (e.g. added manually):
+                    # adopt it into our category so it gets tracked + imported.
+                    logger.info(
+                        "Torrent already in qBittorrent, adopting",
+                        info_hash=info_hash,
+                        title=source.title,
+                    )
+                    await self._set_category(client, info_hash, category)
+                    return info_hash
                 if not r.ok or text.strip() == "Fails.":
                     raise DownloadClientError(
                         f"qBittorrent rejected torrent: {r.status} {text.strip()[:100]}"
@@ -174,6 +184,27 @@ class QbittorrentClient(DownloadClient):
             category=category,
         )
         return info_hash
+
+    async def _set_category(
+        self, client: ClientSession, info_hash: str, category: str
+    ) -> None:
+        # the category may not exist yet if nothing was ever added with it
+        async with client.post(
+            f"{self.base_url}/api/v2/torrents/createCategory",
+            data={"category": category, "savePath": ""},
+            headers={"User-Agent": USER_AGENT},
+        ) as r:
+            if not r.ok and r.status != 409:  # 409 = already exists
+                logger.warning("Failed to create qBittorrent category", status=r.status)
+        async with client.post(
+            f"{self.base_url}/api/v2/torrents/setCategory",
+            data={"hashes": info_hash, "category": category},
+            headers={"User-Agent": USER_AGENT},
+        ) as r:
+            if not r.ok:
+                raise DownloadClientError(
+                    f"Failed to adopt existing torrent into category: {r.status}"
+                )
 
     @override
     async def list_items(self, category: str) -> list[ClientItemStatus]:

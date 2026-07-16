@@ -29,8 +29,9 @@ def get_wishlist_counts(session: Session, user: User | None = None) -> WishlistC
     """
     username = None if user is None or user.is_admin() else user.username
 
+    # distinct: a book requested by several users is still ONE visible entry
     rows = session.exec(
-        select(Audiobook.downloaded, func.count("*"))
+        select(Audiobook.downloaded, func.count(func.distinct(Audiobook.asin)))
         .where(not username or AudiobookRequest.user_username == username)
         .select_from(Audiobook)
         .join(AudiobookRequest)

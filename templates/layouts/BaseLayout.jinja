@@ -100,8 +100,14 @@
                            class="btn btn-ghost text-lg sm:hidden">
                             ABR
                         </a>
+                        <button id="nav-search-toggle"
+                                class="btn btn-ghost btn-square"
+                                title="Search"
+                                onclick="toggleNavSearch()">
+                            <icons.Search />
+                        </button>
                         <div id="nav-search"
-                             class="relative ml-1 min-w-0 flex-shrink w-36 sm:w-72">
+                             class="relative ml-1 min-w-0 flex-shrink w-36 sm:w-72 hidden">
                             <input name="q"
                                    type="search"
                                    placeholder="Search books…"
@@ -116,11 +122,27 @@
                             </div>
                         </div>
                         <script>
+                            const toggleNavSearch = () => {
+                                const box = document.getElementById("nav-search");
+                                box.classList.toggle("hidden");
+                                if (!box.classList.contains("hidden")) {
+                                    box.querySelector("input").focus();
+                                } else {
+                                    document.getElementById("nav-search-results").innerHTML = "";
+                                }
+                            };
                             document.addEventListener("click", (e) => {
                                 const box = document.getElementById("nav-search");
+                                const toggle = document.getElementById("nav-search-toggle");
                                 const results = document.getElementById("nav-search-results");
-                                if (box && results && !box.contains(e.target)) {
+                                if (box && results && !box.contains(e.target) && !toggle.contains(e.target)) {
                                     results.innerHTML = "";
+                                }
+                            });
+                            document.addEventListener("keydown", (e) => {
+                                const box = document.getElementById("nav-search");
+                                if (e.key === "Escape" && box && !box.classList.contains("hidden")) {
+                                    toggleNavSearch();
                                 }
                             });
                         </script>
@@ -128,7 +150,7 @@
                            href="{{ base_url }}/browse"
                            class="btn btn-ghost btn-square"
                            title="Browse all books">
-                            <icons.Search />
+                            <icons.Books />
                         </a>
                         <a preload
                            href="{{ base_url }}/wishlist"

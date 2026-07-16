@@ -9,19 +9,25 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, desc, select
 
 from app.internal.audible.extended import get_extended_metadata
+from app.internal.audible.similar import list_similar_audible_books
 from app.internal.audible.single import get_single_book
 from app.internal.audible.types import get_region_from_settings
-from app.internal.audiobookshelf.client import abs_get_item_url
+from app.internal.audiobookshelf.client import (
+    abs_get_item_url,
+    flag_abs_downloaded_items,
+)
 from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.download_client.config import dc_config
 from app.internal.download_client.grab import get_download_client
 from app.internal.models import (
     Audiobook,
     AudiobookRequest,
+    AudiobookWithRequests,
     DownloadQueueItem,
     DownloadStateEnum,
     GroupEnum,
 )
+from app.internal.ranking.quality import quality_config
 from app.routers.api.requests import start_auto_download_endpoint
 from app.util.connection import get_connection
 from app.util.db import get_session
@@ -90,6 +96,39 @@ async def book_detail(
         region=get_region_from_settings(),
         extended=extended,
         abs_item_url=abs_item_url,
+    )
+
+
+@router.get("/{asin}/hx-similar")
+async def book_similar(
+    asin: str,
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    user: Annotated[DetailedUser, Security(ABRAuth())],
+):
+    """Lazy-loaded 'Similar Titles' shelf on the book detail page."""
+    try:
+        books = await list_similar_audible_books(
+            session, client_session, asin, num_results=10
+        )
+    except Exception as e:
+        logger.warning("Similar titles lookup failed", asin=asin, error=str(e))
+        books = []
+    books = [b for b in books if b.asin != asin]
+    merged = [session.merge(b) for b in books]
+    session.commit()
+    await flag_abs_downloaded_items(session, client_session, merged)
+    results = [
+        AudiobookWithRequests(book=b, requests=b.requests, username=user.username)
+        for b in merged
+    ]
+    return catalog_response(
+        "Book.Similar",
+        results=results,
+        user=user,
+        region=get_region_from_settings(),
+        auto_start_download=quality_config.get_auto_download(session)
+        and user.is_above(GroupEnum.trusted),
     )
 
 

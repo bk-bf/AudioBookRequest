@@ -100,12 +100,29 @@
                            class="btn btn-ghost text-lg sm:hidden">
                             ABR
                         </a>
-                        <a preload
-                           href="{{ base_url }}/search"
-                           class="btn btn-ghost btn-square"
-                           title="Search">
-                            <icons.Search />
-                        </a>
+                        <div id="nav-search" class="relative ml-1 w-40 sm:w-72">
+                            <input name="q"
+                                   type="search"
+                                   placeholder="Search books…"
+                                   autocomplete="off"
+                                   class="input input-sm w-full"
+                                   hx-get="{{ base_url }}/search/hx-live"
+                                   hx-trigger="input changed delay:300ms, focus"
+                                   hx-target="#nav-search-results"
+                                   hx-swap="innerHTML" />
+                            <div id="nav-search-results"
+                                 class="absolute left-0 top-9 z-50 w-72 sm:w-96">
+                            </div>
+                        </div>
+                        <script>
+                            document.addEventListener("click", (e) => {
+                                const box = document.getElementById("nav-search");
+                                const results = document.getElementById("nav-search-results");
+                                if (box && results && !box.contains(e.target)) {
+                                    results.innerHTML = "";
+                                }
+                            });
+                        </script>
                         <a preload
                            href="{{ base_url }}/wishlist"
                            class="btn btn-ghost btn-square group relative"

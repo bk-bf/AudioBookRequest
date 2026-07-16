@@ -152,6 +152,11 @@
         {% endif %}
 
         <Book.Status user={{ user }} book={{ book }} queue_items={{ queue_items }} />
+
+        <div hx-get="{{ base_url }}/book/{{ book.asin }}/hx-similar"
+             hx-trigger="load"
+             hx-swap="outerHTML">
+        </div>
     </main>
 </div>
 

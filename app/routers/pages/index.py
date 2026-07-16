@@ -1,4 +1,4 @@
-from typing import Annotated, Sequence
+from typing import Annotated
 
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Query, Security
@@ -7,10 +7,9 @@ from sqlalchemy.sql.functions import count
 from sqlmodel import Session, select
 
 from app.internal.audible.types import audible_region_type, get_region_from_settings
-from app.internal.audiobookshelf.client import abs_mark_downloaded_flags
+from app.internal.audiobookshelf.client import flag_abs_downloaded_items
 from app.internal.auth.authentication import ABRAuth, DetailedUser
-from app.internal.models import Audiobook, AudiobookRequest, AudiobookWithRequests
-from app.util.log import logger
+from app.internal.models import AudiobookRequest, AudiobookWithRequests
 from app.internal.ranking.quality import quality_config
 from app.routers.api.recommendations import (
     get_category_recommendations as api_get_category_recommendations,
@@ -38,27 +37,6 @@ from app.util.db import get_session
 from app.util.templates import catalog_response
 
 router = APIRouter()
-
-
-async def _flag_abs_downloaded(
-    session: Session,
-    client_session: ClientSession,
-    reasons: Sequence[object] | None,
-) -> None:
-    """Best-effort: mark recommendation cards whose book already exists in ABS."""
-    books: list[Audiobook] = []
-    for reason in reasons or []:
-        book: object = getattr(reason, "book", None)
-        if isinstance(book, AudiobookWithRequests):
-            books.append(book.book)
-        elif isinstance(book, Audiobook):
-            books.append(book)
-    if not books:
-        return
-    try:
-        await abs_mark_downloaded_flags(session, client_session, books)
-    except Exception as e:
-        logger.warning("ABS downloaded-check failed on homepage", error=str(e))
 
 
 @router.get("/")
@@ -98,7 +76,7 @@ async def get_user_recommendations(
         limit=limit,
     )
 
-    await _flag_abs_downloaded(session, client_session, result.recommendations)
+    await flag_abs_downloaded_items(session, client_session, result.recommendations)
 
     return catalog_response(
         "Index.PopularSection",
@@ -109,7 +87,7 @@ async def get_user_recommendations(
         description="Personalized recommendations based on your requests",
         empty="No recommendations available at this time. Request some books to start getting recommendations.",
         region=get_region_from_settings(),
-        auto_download=quality_config.get_auto_download(session),
+        auto_start_download=quality_config.get_auto_download(session),
     )
 
 
@@ -130,7 +108,7 @@ async def get_popular_recommendations(
         exclude_downloaded=exclude_downloaded,
     )
 
-    await _flag_abs_downloaded(session, client_session, result)
+    await flag_abs_downloaded_items(session, client_session, result)
 
     return catalog_response(
         "Index.PopularSection",
@@ -140,7 +118,7 @@ async def get_popular_recommendations(
         description="The most popular books on the instance",
         empty="No popular recommendations available at this time. Request some books to start getting recommendations.",
         region=get_region_from_settings(),
-        auto_download=quality_config.get_auto_download(session),
+        auto_start_download=quality_config.get_auto_download(session),
     )
 
 
@@ -157,6 +135,9 @@ async def get_category_recommendations(
         user=user,
         audible_region=audible_region,
     )
+
+    all_category_books = [b for books in result.values() for b in books]
+    await flag_abs_downloaded_items(session, client_session, all_category_books)
 
     region = audible_region or get_region_from_settings()
 
@@ -210,7 +191,7 @@ async def get_recently_requested_recommendations(
         description="Books that have been recently requested by users on the instance",
         empty="No recently requested recommendations available at this time. Request some books to start getting recommendations.",
         region=get_region_from_settings(),
-        auto_download=quality_config.get_auto_download(session),
+        auto_start_download=quality_config.get_auto_download(session),
     )
 
 
@@ -246,7 +227,7 @@ async def get_fallback_recommendations(
         description="Popular books from Audible",
         empty="No fallback recommendations available at this time.",
         region=region,
-        auto_download=quality_config.get_auto_download(session),
+        auto_start_download=quality_config.get_auto_download(session),
     )
 
 
@@ -283,7 +264,7 @@ async def get_popular_authors_recommendations(
         description="Books from popular authors",
         empty="No popular author recommendations available at this time. Request some books to start getting recommendations.",
         region=region,
-        auto_download=quality_config.get_auto_download(session),
+        auto_start_download=quality_config.get_auto_download(session),
     )
 
 
@@ -320,5 +301,5 @@ async def get_popular_narrators_recommendations(
         description="Books from popular narrators",
         empty="No popular narrator recommendations available at this time. Request some books to start getting recommendations.",
         region=region,
-        auto_download=quality_config.get_auto_download(session),
+        auto_start_download=quality_config.get_auto_download(session),
     )

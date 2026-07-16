@@ -68,7 +68,9 @@
                         {{ loop.index }}
                     </th>
                     <td>
-                        <div class="size-16 lg:size-24">
+                        <a preload
+                           href="{{ base_url }}/book/{{ book.asin }}"
+                           class="block size-16 lg:size-24">
                             {% if book.cover_image %}
                                 <img class="object-cover w-full h-full"
                                      height="64"
@@ -80,7 +82,7 @@
                                     <icons.PhotoOff />
                                 </div>
                             {% endif %}
-                        </div>
+                        </a>
                     </td>
                     <td>
                         <div class="flex flex-col">

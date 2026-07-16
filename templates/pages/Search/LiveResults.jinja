@@ -1,0 +1,53 @@
+{#def
+    results: list[AudiobookWithRequests],
+    query: str = "",
+#}
+
+{% if query %}
+    <div class="menu bg-base-200 rounded-box shadow-xl w-full p-2 max-h-[70vh] overflow-y-auto flex-nowrap">
+        {% for result in results %}
+            {% set book = result.book %}
+            <a preload
+               href="{{ base_url }}/book/{{ book.asin }}"
+               class="flex flex-row items-center gap-3 p-2 rounded-lg hover:bg-base-300">
+                <div class="w-10 h-10 shrink-0 rounded overflow-hidden flex items-center justify-center bg-neutral/20">
+                    {% if book.cover_image %}
+                        <img class="object-cover w-full h-full"
+                             width="40"
+                             height="40"
+                             src="{{ book.cover_image }}"
+                             alt="{{ book.title }}" />
+                    {% else %}
+                        <icons.PhotoOff />
+                    {% endif %}
+                </div>
+                <div class="flex flex-col min-w-0 flex-1">
+                    <span class="text-sm font-semibold truncate">{{ book.title }}</span>
+                    <span class="text-xs opacity-60 truncate">{{ book.authors | join(", ") }}</span>
+                </div>
+                {% if book.downloaded %}
+                    <span class="badge badge-success badge-sm shrink-0">✓</span>
+                {% elif result.already_requested %}
+                    <span class="badge badge-ghost badge-sm shrink-0">requested</span>
+                {% endif %}
+            </a>
+        {% endfor %}
+        {% if not results %}
+            <div class="p-3 text-sm opacity-60">
+                No matches for “{{ query }}”
+            </div>
+        {% endif %}
+        <div class="border-t border-base-300 mt-1 pt-1 flex justify-between">
+            <a preload
+               class="btn btn-ghost btn-sm"
+               href="{{ base_url }}/search?q={{ query }}">
+                All results →
+            </a>
+            <a preload
+               class="btn btn-ghost btn-sm"
+               href="{{ base_url }}/search/manual">
+                Advanced Search
+            </a>
+        </div>
+    </div>
+{% endif %}

@@ -1,0 +1,23 @@
+{#def
+    results: list[AudiobookWithRequests],
+    user: DetailedUser,
+    region: audible_region_type,
+    auto_start_download: bool = False,
+#}
+
+{% if results %}
+    <div class="flex flex-col gap-2">
+        <h2 class="text-lg font-bold">
+            Similar Titles
+        </h2>
+        <div class="overflow-x-auto">
+            <div class="flex gap-4 pb-4" style="width: max-content">
+                {% for result in results %}
+                    <div class="flex-none w-32 sm:w-40">
+                        <BookCard book_with_requests={{ result }} auto_start_download={{ auto_start_download }} region={{ region }} user={{ user }} />
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+{% endif %}

@@ -10,6 +10,12 @@
 
 <div class="book-card flex flex-col">
     <div class="relative w-32 h-32 sm:w-40 sm:h-40 rounded-md overflow-hidden shadow shadow-black items-center justify-center flex">
+        {% if book.asin %}
+            <a preload
+               class="absolute inset-0 z-0"
+               title="{{ book.title }}"
+               href="{{ base_url }}/book/{{ book.asin }}"></a>
+        {% endif %}
         {% if book.cover_image %}
             <img class="object-cover w-full h-full hover:scale-110 transition-transform duration-500 ease-in-out"
                  height="128"
@@ -20,7 +26,7 @@
             <icons.PhotoOff />
         {% endif %}
         <!-- Request Button -->
-        <button class="absolute top-0 right-0 rounded-none rounded-bl-md btn-sm btn btn-square items-center justify-center flex {% if book.downloaded or already_requested %}btn-ghost bg-success text-neutral/20{% else %}btn-info{% endif %}"
+        <button class="absolute z-10 top-0 right-0 rounded-none rounded-bl-md btn-sm btn btn-square items-center justify-center flex {% if book.downloaded or already_requested %}btn-ghost bg-success text-neutral/20{% else %}btn-info{% endif %}"
                 hx-post="{{ base_url }}/request/hx-add/{{ book.asin }}"
                 hx-vals='{"region": "{{ region }}"}'
                 hx-disabled-elt="this"

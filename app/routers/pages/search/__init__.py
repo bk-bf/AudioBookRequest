@@ -84,3 +84,34 @@ async def search_suggestions(
         id="search-suggestions",
         suggestions=suggestions,
     )
+
+
+@router.get("/hx-live")
+async def live_search(
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    session: Annotated[Session, Depends(get_session)],
+    user: Annotated[DetailedUser, Security(ABRAuth())],
+    query: Annotated[str | None, Query(alias="q")] = None,
+):
+    """Navbar typeahead: top matches rendered as a dropdown."""
+    query = (query or "").strip()
+    if len(query) < 2:
+        return catalog_response("Search.LiveResults", results=[], query="")
+    try:
+        results = await search_books(
+            session=session,
+            client_session=client_session,
+            user=user,
+            query=query,
+            num_results=6,
+            page=0,
+            region=get_region_from_settings(),
+        )
+    except Exception as e:
+        logger.warning("Live search failed", error=str(e))
+        results = []
+    return catalog_response(
+        "Search.LiveResults",
+        results=results,
+        query=query,
+    )

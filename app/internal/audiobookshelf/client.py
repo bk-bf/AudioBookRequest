@@ -4,7 +4,7 @@ import asyncio
 import posixpath
 import re
 from datetime import datetime
-from typing import Literal
+from typing import Iterable, Literal
 
 from aiohttp import ClientSession
 from pydantic import BaseModel, TypeAdapter
@@ -17,7 +17,7 @@ from app.internal.audiobookshelf.types import (
     ABSLibrary,
     ABSPodcastItem,
 )
-from app.internal.models import Audiobook
+from app.internal.models import Audiobook, AudiobookWithRequests
 from app.util.cache import SimpleCache
 from app.util.connection import USER_AGENT
 from app.util.db import get_session
@@ -344,3 +344,34 @@ async def abs_mark_downloaded_flags(
 
     await asyncio.gather(*[_check_and_mark(b) for b in to_check])
     session.commit()
+
+
+async def flag_abs_downloaded_items(
+    session: Session,
+    client_session: ClientSession,
+    items: Iterable[object] | None,
+) -> None:
+    """Best-effort downloaded-flagging for any iterable of Audiobook,
+    AudiobookWithRequests, or objects with a .book attribute."""
+
+    def unwrap(obj: object) -> Audiobook | None:
+        if isinstance(obj, Audiobook):
+            return obj
+        if isinstance(obj, AudiobookWithRequests):
+            return obj.book
+        inner: object = getattr(obj, "book", None)
+        if inner is not None and not isinstance(inner, Audiobook):
+            inner = getattr(inner, "book", None)
+        return inner if isinstance(inner, Audiobook) else None
+
+    books: list[Audiobook] = []
+    for obj in items or []:
+        book = unwrap(obj)
+        if book is not None:
+            books.append(book)
+    if not books:
+        return
+    try:
+        await abs_mark_downloaded_flags(session, client_session, books)
+    except Exception as e:
+        logger.warning("ABS downloaded-check failed", error=str(e))

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Security
 from sqlmodel import Session
 
 from app.internal.audible.types import get_region_from_settings
+from app.internal.audiobookshelf.client import flag_abs_downloaded_items
 from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.ranking.quality import quality_config
 from app.routers.api.recommendations import (
@@ -32,6 +33,7 @@ async def get_for_you_recommendations(
         limit=per_page,
         offset=(page - 1) * per_page,
     )
+    await flag_abs_downloaded_items(session, client_session, result.recommendations)
     has_next = result.total > page * per_page
 
     return catalog_response(

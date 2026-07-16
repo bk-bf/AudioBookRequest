@@ -46,6 +46,10 @@
                         <th>
                             Added
                         </th>
+                        {% if user.is_admin() %}
+                            <th>
+                            </th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -83,6 +87,50 @@
                             <td class="text-xs opacity-60">
                                 {{ item.created_at.strftime("%Y-%m-%d %H:%M") }}
                             </td>
+                            {% if user.is_admin() %}
+                                <td>
+                                    <button type="button"
+                                            title="Delete this download"
+                                            class="btn btn-square btn-ghost btn-sm text-error"
+                                            onclick="delete_item_{{ loop.index }}.showModal()">
+                                        <icons.Trash />
+                                    </button>
+                                    <dialog id="delete_item_{{ loop.index }}" class="modal">
+                                        <div class="modal-box">
+                                            <h3 class="text-lg font-bold">
+                                                Delete this download?
+                                            </h3>
+                                            <p class="py-2 text-sm opacity-70 break-all">
+                                                {{ item.source_title }}
+                                                {% if item.import_path %}
+                                                    <br />
+                                                    <span class="font-mono text-xs">{{ item.import_path }}</span>
+                                                {% endif %}
+                                            </p>
+                                            <form class="flex flex-col gap-3"
+                                                  hx-post="{{ base_url }}/book/{{ book.asin }}/hx-delete-item/{{ item.id }}"
+                                                  hx-disabled-elt="find button[type='submit']"
+                                                  hx-swap="none">
+                                                <label class="label cursor-pointer justify-start gap-2">
+                                                    <input type="checkbox"
+                                                           name="remove_torrent"
+                                                           class="checkbox checkbox-sm"
+                                                           checked />
+                                                    <span class="label-text text-sm">Also remove torrent + data from qBittorrent</span>
+                                                </label>
+                                                <button type="submit" class="btn btn-error btn-sm">
+                                                    Delete
+                                                </button>
+                                            </form>
+                                        </div>
+                                        <form method="dialog" class="modal-backdrop">
+                                            <button>
+                                                close
+                                            </button>
+                                        </form>
+                                    </dialog>
+                                </td>
+                            {% endif %}
                         </tr>
                     {% endfor %}
                 </tbody>

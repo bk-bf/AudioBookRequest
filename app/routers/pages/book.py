@@ -1,10 +1,11 @@
 import shutil
+import uuid
 from pathlib import Path
 from typing import Annotated
 
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Form, HTTPException, Security
-from sqlmodel import Session, col, delete, desc, select
+from sqlmodel import Session, col, desc, select
 
 from app.internal.audible.extended import get_extended_metadata
 from app.internal.audible.single import get_single_book
@@ -17,6 +18,7 @@ from app.internal.models import (
     Audiobook,
     AudiobookRequest,
     DownloadQueueItem,
+    DownloadStateEnum,
     GroupEnum,
 )
 from app.routers.api.requests import start_auto_download_endpoint
@@ -135,31 +137,29 @@ def _delete_imported_files(session: Session, downloaded_path: str) -> bool:
     return True
 
 
-@router.post("/{asin}/hx-delete-files")
-async def book_delete_files(
+@router.post("/{asin}/hx-delete-item/{item_id}")
+async def book_delete_queue_item(
     asin: str,
+    item_id: uuid.UUID,
     session: Annotated[Session, Depends(get_session)],
     admin_user: Annotated[DetailedUser, Security(ABRAuth(GroupEnum.admin))],
     remove_torrent: Annotated[bool, Form()] = False,
-    remove_request: Annotated[bool, Form()] = False,
 ):
-    """Radarr-style 'delete files': remove the imported files from the library,
-    reset the book to wanted, and optionally drop the torrent + wishlist request."""
+    """Delete a single download from the book's history: its imported files,
+    optionally the torrent + data in the client, and the history row itself."""
     _ = admin_user
     book = session.get(Audiobook, asin)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
+    item = session.get(DownloadQueueItem, item_id)
+    if not book or not item or item.asin != asin:
+        raise HTTPException(status_code=404, detail="Download not found")
 
     deleted = False
-    if book.downloaded_path:
-        deleted = _delete_imported_files(session, book.downloaded_path)
+    if item.import_path:
+        deleted = _delete_imported_files(session, item.import_path)
 
-    queue_items = session.exec(
-        select(DownloadQueueItem).where(col(DownloadQueueItem.asin) == asin)
-    ).all()
-    client = get_download_client(session)
-    for item in queue_items:
-        if remove_torrent and client and item.download_id:
+    if remove_torrent and item.download_id:
+        client = get_download_client(session)
+        if client:
             try:
                 await client.remove(item.download_id, delete_files=True)
             except Exception as e:
@@ -168,22 +168,29 @@ async def book_delete_files(
                     download_id=item.download_id,
                     error=str(e),
                 )
-        session.delete(item)
-
-    book.downloaded = False
-    book.downloaded_path = None
-    session.add(book)
-    if remove_request:
-        session.execute(
-            delete(AudiobookRequest).where(col(AudiobookRequest.asin) == asin)
-        )
+    session.delete(item)
     session.commit()
 
-    parts = [
-        "Files deleted" if deleted else "No files on disk, state reset",
+    # Recompute the book's downloaded state from what's left
+    remaining = [
+        i
+        for i in session.exec(
+            select(DownloadQueueItem)
+            .where(col(DownloadQueueItem.asin) == asin)
+            .order_by(col(DownloadQueueItem.created_at).asc())
+        ).all()
+        if i.state == DownloadStateEnum.imported
     ]
-    if remove_torrent and queue_items:
-        parts.append("torrent removed")
-    if remove_request:
-        parts.append("request removed")
-    raise ToastException(", ".join(parts), "success", cause_refresh=True)
+    if remaining:
+        book.downloaded_path = remaining[-1].import_path
+    else:
+        book.downloaded = False
+        book.downloaded_path = None
+    session.add(book)
+    session.commit()
+
+    raise ToastException(
+        "Files deleted" if deleted else "Download removed",
+        "success",
+        cause_refresh=True,
+    )

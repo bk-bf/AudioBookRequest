@@ -30,6 +30,7 @@ class ABSBook(BaseModel):
     class _Metadata(BaseModel):
         title: str | None = None
         subtitle: str | None = None
+        asin: str | None = None
 
         class _Author(BaseModel):
             id: str

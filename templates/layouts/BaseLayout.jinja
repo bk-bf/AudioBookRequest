@@ -89,7 +89,7 @@
         {% if not hide_navbar %}
             <header class="shadow-lg">
                 <nav class="navbar">
-                    <div class="flex-1">
+                    <div class="flex-1 flex items-center min-w-0">
                         <a preload
                            href="{{ base_url }}/"
                            class="btn btn-ghost text-lg hidden sm:inline-flex">
@@ -100,7 +100,8 @@
                            class="btn btn-ghost text-lg sm:hidden">
                             ABR
                         </a>
-                        <div id="nav-search" class="relative ml-1 w-40 sm:w-72">
+                        <div id="nav-search"
+                             class="relative ml-1 min-w-0 flex-shrink w-36 sm:w-72">
                             <input name="q"
                                    type="search"
                                    placeholder="Search books…"

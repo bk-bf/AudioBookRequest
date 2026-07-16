@@ -159,6 +159,16 @@ async def delete_request(
             )
         )
     session.commit()
+
+    # nobody wants this book anymore: abort any in-flight download so it
+    # doesn't finish, import, and resurface
+    remaining = session.exec(
+        select(AudiobookRequest).where(AudiobookRequest.asin == asin_or_uuid)
+    ).first()
+    if not remaining:
+        from app.internal.library import abort_active_downloads
+
+        await abort_active_downloads(session, asin_or_uuid)
     return Response(status_code=204)
 
 

@@ -175,8 +175,9 @@
                                     </button>
                                     <button title="Remove"
                                             class="btn btn-square"
-                                            hx-delete="{{ base_url }}/wishlist/hx-delete/{{ book.asin }}{%- if page.__eq__('downloaded') -%}?downloaded=true{%- endif -%}"
-                                            hx-swap="outerHTML"
+                                            hx-delete="{{ base_url }}/wishlist/hx-delete/{{ book.asin }}{%- if page.__eq__('downloaded') -%}?downloaded=true{%- endif -%}" {% if page.__eq__("downloaded") %}hx-confirm="Remove this book AND delete its files from the library?"{% endif %} hx-swap="
+                                            outerHTML
+                                            "
                                             hx-target="#book-table-body"
                                             hx-disabled-elt="this">
                                         <icons.Ban />
@@ -258,8 +259,9 @@
                         </a>
                         <button title="Remove"
                                 class="btn btn-square btn-sm"
-                                hx-delete="{{ base_url }}/wishlist/hx-delete/{{ book.asin }}{%- if page.__eq__('downloaded') -%}?downloaded=true{%- endif -%}"
-                                hx-swap="outerHTML"
+                                hx-delete="{{ base_url }}/wishlist/hx-delete/{{ book.asin }}{%- if page.__eq__('downloaded') -%}?downloaded=true{%- endif -%}" {% if page.__eq__("downloaded") %}hx-confirm="Remove this book AND delete its files from the library?"{% endif %} hx-swap="
+                                outerHTML
+                                "
                                 hx-target="#book-table-body"
                                 hx-disabled-elt="this">
                             <icons.Ban />

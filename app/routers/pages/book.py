@@ -1,12 +1,11 @@
-import shutil
 import uuid
-from pathlib import Path
 from typing import Annotated
 
 from aiohttp import ClientSession
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Security
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, desc, select
+from sqlmodel import delete as sql_delete
 
 from app.internal.audible.extended import get_extended_metadata
 from app.internal.audible.similar import list_similar_audible_books
@@ -17,8 +16,8 @@ from app.internal.audiobookshelf.client import (
     flag_abs_downloaded_items,
 )
 from app.internal.auth.authentication import ABRAuth, DetailedUser
-from app.internal.download_client.config import dc_config
 from app.internal.download_client.grab import get_active_queue_item, get_download_client
+from app.internal.library import delete_imported_files
 from app.internal.query import background_auto_download
 from app.internal.models import (
     Audiobook,
@@ -224,28 +223,6 @@ async def book_abort_download(
     raise ToastException("Download aborted", "success", cause_refresh=True)
 
 
-def _delete_imported_files(session: Session, downloaded_path: str) -> bool:
-    """Delete an imported book directory, but only if it sits strictly inside
-    the configured library directory. Returns True if files were removed."""
-    library_dir = dc_config.get_library_dir(session)
-    if not library_dir:
-        return False
-    lib = Path(library_dir).resolve()
-    target = Path(downloaded_path).resolve()
-    if target == lib or lib not in target.parents:
-        logger.warning("Refusing to delete path outside the library", path=str(target))
-        return False
-    if not target.exists():
-        return False
-    shutil.rmtree(target)
-    try:
-        target.parent.rmdir()  # clean up the author dir if now empty
-    except OSError:
-        pass
-    logger.info("Deleted imported files", path=str(target))
-    return True
-
-
 @router.post("/{asin}/hx-delete-item/{item_id}")
 async def book_delete_queue_item(
     asin: str,
@@ -253,6 +230,7 @@ async def book_delete_queue_item(
     session: Annotated[Session, Depends(get_session)],
     admin_user: Annotated[DetailedUser, Security(ABRAuth(GroupEnum.admin))],
     remove_torrent: Annotated[bool, Form()] = False,
+    remove_request: Annotated[bool, Form()] = False,
 ):
     """Delete a single download from the book's history: its imported files,
     optionally the torrent + data in the client, and the history row itself."""
@@ -264,7 +242,7 @@ async def book_delete_queue_item(
 
     deleted = False
     if item.import_path:
-        deleted = _delete_imported_files(session, item.import_path)
+        deleted = delete_imported_files(session, item.import_path)
 
     if remove_torrent and item.download_id:
         client = get_download_client(session)
@@ -296,6 +274,10 @@ async def book_delete_queue_item(
         book.downloaded = False
         book.downloaded_path = None
     session.add(book)
+    if remove_request:
+        session.execute(
+            sql_delete(AudiobookRequest).where(col(AudiobookRequest.asin) == asin)
+        )
     session.commit()
 
     raise ToastException(

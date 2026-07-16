@@ -7,6 +7,7 @@ from sqlmodel import Session
 from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.db_queries import get_wishlist_counts, get_wishlist_results
 from app.internal.models import GroupEnum
+from app.internal.library import delete_book_media
 from app.internal.query import background_auto_download
 from app.routers.api.requests import delete_request as api_delete_request
 from app.routers.api.requests import mark_downloaded as api_mark_downloaded
@@ -87,7 +88,12 @@ async def bulk_action(
             background_task.add_task(background_auto_download, asin)
     elif action == "delete":
         for asin in asins:
-            await api_delete_request(asin, session, user)
+            if page == "downloaded":
+                if not user.is_admin():
+                    raise ToastException("Not allowed", "error")
+                await delete_book_media(session, asin)
+            else:
+                await api_delete_request(asin, session, user)
     elif action == "mark":
         if not user.is_admin():
             raise ToastException("Not allowed", "error")
@@ -125,5 +131,11 @@ async def delete_request(
     user: Annotated[DetailedUser, Security(ABRAuth())],
     downloaded: bool | None = None,
 ):
-    await api_delete_request(asin, session, user)
+    if downloaded:
+        # library view: removing means actually deleting the book's media
+        if not user.is_admin():
+            raise ToastException("Not allowed", "error")
+        await delete_book_media(session, asin)
+    else:
+        await api_delete_request(asin, session, user)
     return render_wishlist(session, user, "downloaded" if downloaded else "wishlist")

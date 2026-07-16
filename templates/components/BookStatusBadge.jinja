@@ -1,0 +1,30 @@
+{#def
+    downloaded: bool = False,
+    queue: DownloadQueueItem | None = None,
+#}
+
+{% if queue %}
+    {% if queue.state.value.__eq__("downloading") %}
+        <div class="flex items-center gap-2" title="{{ queue.source_title }}">
+            <progress class="progress progress-primary w-20"
+                      value="{{ queue.progress_percent }}"
+                      max="100"></progress>
+            <span class="text-xs">{{ queue.progress_percent }}%</span>
+        </div>
+    {% elif queue.state.value.__eq__("queued") %}
+        <span class="badge badge-ghost" title="{{ queue.source_title }}">Queued</span>
+    {% elif queue.state.value.__eq__("stalled") %}
+        <span class="badge badge-warning"
+              title="Stalled at {{ queue.progress_percent }}% — {{ queue.source_title }}">Stalled {{ queue.progress_percent }}%</span>
+    {% elif queue.state.value.__eq__("completed") %}
+        <span class="badge badge-info" title="{{ queue.source_title }}">Importing…</span>
+    {% elif queue.state.value.__eq__("imported") %}
+        <span class="badge badge-success" title="{{ queue.import_path }}">Imported</span>
+    {% elif queue.state.value.__eq__("error") %}
+        <span class="badge badge-error" title="{{ queue.error }}">Failed</span>
+    {% endif %}
+{% elif downloaded %}
+    <span class="badge badge-success">Downloaded</span>
+{% else %}
+    <span class="text-xs opacity-40">—</span>
+{% endif %}

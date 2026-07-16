@@ -83,6 +83,7 @@ class Audiobook(BaseSQLModel, table=True):
     )
     downloaded: bool = False
     downloaded_path: str | None = None
+    region: str | None = None  # audible region this metadata came from
 
     requests: list["AudiobookRequest"] = Relationship(back_populates="audiobook")  # pyright: ignore[reportAny]
 

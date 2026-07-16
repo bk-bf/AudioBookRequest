@@ -1,3 +1,4 @@
+import asyncio
 import random
 from datetime import date
 from typing import Annotated
@@ -42,6 +43,24 @@ from app.util.templates import catalog_response
 router = APIRouter()
 
 
+def _dedupe_books(
+    items: list[AudiobookWithRequests],
+) -> list[AudiobookWithRequests]:
+    """Collapse the same title+author appearing from multiple regions/editions."""
+    seen: set[tuple[str, str]] = set()
+    out: list[AudiobookWithRequests] = []
+    for item in items:
+        key = (
+            item.book.title.strip().lower(),
+            item.book.authors[0].strip().lower() if item.book.authors else "",
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
 @router.get("/")
 def read_root(
     user: Annotated[DetailedUser, Security(ABRAuth())],
@@ -80,15 +99,19 @@ async def get_hero(
         )
     except Exception:
         books = []
+    books = _dedupe_books(books)
     if not books:
         return catalog_response("Index.Empty")
     await flag_abs_downloaded_items(session, client_session, books)
-    hero = books[date.today().toordinal() % len(books)]
-    extended = await get_extended_metadata(client_session, hero.book.asin)
+    # rotate the slide order daily so the first slide changes every day
+    offset = date.today().toordinal() % len(books)
+    slides = (books[offset:] + books[:offset])[:6]
+    extended_list = await asyncio.gather(
+        *[get_extended_metadata(client_session, s.book.asin) for s in slides]
+    )
     return catalog_response(
         "Index.Hero",
-        hero=hero,
-        extended=extended,
+        slides=list(zip(slides, extended_list)),
         user=user,
         region=get_region_from_settings(),
         auto_start_download=quality_config.get_auto_download(session),
@@ -287,7 +310,7 @@ async def get_fallback_recommendations(
 
     reasons = [
         _AudiobookReasonWrapper(book=book, reason="Popular on Audible")
-        for book in result
+        for book in _dedupe_books(result)
     ]
 
     region = audible_region or get_region_from_settings()

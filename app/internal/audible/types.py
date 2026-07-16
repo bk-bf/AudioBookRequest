@@ -5,8 +5,11 @@ from typing import Literal
 from pydantic import BaseModel
 from typing_extensions import override
 
+from sqlmodel import Session
+
 from app.internal.env_settings import Settings
 from app.internal.models import Audiobook
+from app.util.cache import StringConfigCache
 
 REFETCH_TTL = 60 * 60 * 24 * 7  # 1 week
 
@@ -38,8 +41,21 @@ audible_regions: dict[audible_region_type, str] = {
 }
 
 
+region_config: StringConfigCache[Literal["app_region"]] = StringConfigCache()
+
+
 def get_region_from_settings() -> audible_region_type:
-    region = Settings().app.default_region
+    """Configured Audible region: DB setting first, env var fallback, then us."""
+    region: str | None = None
+    try:
+        from app.util.db import get_session
+
+        session: Session
+        with next(get_session()) as session:
+            region = region_config.get(session, "app_region")
+    except Exception:
+        region = None
+    region = region or Settings().app.default_region
     if region not in audible_regions:
         return "us"
     return region
@@ -58,7 +74,7 @@ class AudibleProduct(BaseModel):
     title: str
     subtitle: str | None = None
 
-    def to_audiobook(self) -> Audiobook:
+    def to_audiobook(self, region: audible_region_type | None = None) -> Audiobook:
         cover_image = self.product_images.get("500")
         if not cover_image:
             covers = list(self.product_images.values())
@@ -74,12 +90,13 @@ class AudibleProduct(BaseModel):
             cover_image=cover_image,
             release_date=datetime.fromisoformat(self.release_date),
             runtime_length_min=self.runtime_length_min,
+            region=region,
         )
 
 
 class _Response(BaseModel, metaclass=ABCMeta):
     @abstractmethod
-    def audiobooks(self) -> list[Audiobook]:
+    def audiobooks(self, region: audible_region_type | None = None) -> list[Audiobook]:
         pass
 
 
@@ -87,21 +104,21 @@ class AudibleSearchResponse(_Response):
     products: list[AudibleProduct]
 
     @override
-    def audiobooks(self) -> list[Audiobook]:
-        return [product.to_audiobook() for product in self.products]
+    def audiobooks(self, region: audible_region_type | None = None) -> list[Audiobook]:
+        return [product.to_audiobook(region) for product in self.products]
 
 
 class AudibleSimilarResponse(_Response):
     similar_products: list[AudibleProduct]
 
     @override
-    def audiobooks(self) -> list[Audiobook]:
-        return [sim.to_audiobook() for sim in self.similar_products]
+    def audiobooks(self, region: audible_region_type | None = None) -> list[Audiobook]:
+        return [sim.to_audiobook(region) for sim in self.similar_products]
 
 
 class AudibleSingleResponse(_Response):
     product: AudibleProduct
 
     @override
-    def audiobooks(self) -> list[Audiobook]:
-        return [self.product.to_audiobook()]
+    def audiobooks(self, region: audible_region_type | None = None) -> list[Audiobook]:
+        return [self.product.to_audiobook(region)]

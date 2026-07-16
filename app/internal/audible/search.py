@@ -185,7 +185,7 @@ async def search_audible_books(
         return []
 
     # do not fetch book results we already have locally
-    books = audible_response.audiobooks()
+    books = audible_response.audiobooks(audible_region)
 
     logger.debug(
         "Search results fetched",

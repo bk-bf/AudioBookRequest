@@ -63,7 +63,7 @@ async def list_similar_audible_books(
             response.raise_for_status()
             sims = AudibleSimilarResponse.model_validate(await response.json())
 
-        ordered = sims.audiobooks()
+        ordered = sims.audiobooks(audible_region)
     except Exception as e:
         # Fallback: approximate with author-based search
         logger.debug(

@@ -71,6 +71,10 @@
             {{ book.subtitle }}
         </div>
     {% endif %}
+    {% if book.region %}
+        <span class="badge badge-ghost badge-xs uppercase w-fit mt-1"
+              title="Audible region">{{ book.region }}</span>
+    {% endif %}
     <div class="text-xs font-semibold line-clamp-1"
          title="Authors: {{ book.authors | join(", ") }}">
         {% for author in book.authors[:2] %}

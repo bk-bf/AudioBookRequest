@@ -5,6 +5,11 @@ from sqlmodel import Session
 
 from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.models import GroupEnum
+from app.internal.audible.types import (
+    audible_regions,
+    get_region_from_settings,
+    region_config,
+)
 from app.internal.ranking.quality import IndexerFlag, QualityRange, quality_config
 from app.routers.api.settings.download import (
     UpdateDownloadSettings,
@@ -39,6 +44,7 @@ def read_download(
     return catalog_response(
         "Settings.Download.Index",
         user=admin_user,
+        current_region=get_region_from_settings(),
         auto_download=auto_download,
         seeder_priority=seeder_priority,
         seeder_include_leechers=seeder_include_leechers,
@@ -162,3 +168,16 @@ def remove_indexer_flag(
         "Settings.Download.IndexerFlags",
         indexer_flags=flags,
     )
+
+
+@router.put("/hx-region")
+def update_region(
+    region: Annotated[str, Form()],
+    session: Annotated[Session, Depends(get_session)],
+    admin_user: Annotated[DetailedUser, Security(ABRAuth(GroupEnum.admin))],
+):
+    _ = admin_user
+    if region not in audible_regions:
+        region = "us"
+    region_config.set(session, "app_region", region)
+    return Response(status_code=204)

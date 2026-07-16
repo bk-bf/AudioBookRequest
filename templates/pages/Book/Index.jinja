@@ -90,6 +90,12 @@
                         {{ extended.language }}
                     </div>
                 {% endif %}
+                {% if book.region %}
+                    <div class="text-sm">
+                        <span class="opacity-60">Region:</span>
+                        <span class="uppercase">{{ book.region }}</span>
+                    </div>
+                {% endif %}
                 <div class="text-sm">
                     <span class="opacity-60">Requested by:</span>
                     {% if requests %}

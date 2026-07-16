@@ -28,4 +28,4 @@ async def get_single_book(
     ) as response:
         response.raise_for_status()
         product = AudibleSingleResponse.model_validate(await response.json())
-        return product.product.to_audiobook()
+        return product.product.to_audiobook(audible_region)

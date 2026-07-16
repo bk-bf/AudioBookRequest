@@ -1,5 +1,6 @@
 {#def
     user: DetailedUser,
+    current_region: str = "us",
     auto_download: bool,
     seeder_priority: bool,
     seeder_include_leechers: bool,
@@ -51,6 +52,24 @@
     <h2 class="text-lg">
         Download
     </h2>
+    <div class="w-full flex items-center justify-between gap-2 py-2">
+        <label for="app-region"
+               title="All Audible metadata (search, homepage, similar titles) uses this region. One region avoids duplicate editions.">
+            Audible Region
+        </label>
+        <select id="app-region"
+                name="region"
+                class="select select-sm w-28"
+                hx-put="{{ base_url }}/settings/download/hx-region"
+                hx-trigger="change"
+                hx-swap="none">
+            {% for r in audible_regions.keys() %}
+                <option value="{{ r }}" {% if current_region.__eq__(r) %}selected{% endif %}>
+                    {{ r | upper }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
     <Settings.Download.Sliders auto_download={{ auto_download }} seeder_priority={{ seeder_priority }} seeder_include_leechers={{ seeder_include_leechers }} flac_range={{ flac_range }} m4b_range={{ m4b_range }} mp3_range={{ mp3_range }} unknown_audio_range={{ unknown_audio_range }} unknown_range={{ unknown_range }} min_seeders={{ min_seeders }} name_ratio={{ name_ratio }} title_ratio={{ title_ratio }} />
 
     <hr class="my-4 border-base-200" />

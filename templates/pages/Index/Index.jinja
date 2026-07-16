@@ -18,9 +18,6 @@
     <Index.PopularSection title="Recently Added" user={{ user }} lazy_url="/hx-recent-library" region={{ region }} auto_start_download={{ auto_download }} />
     <Index.PopularSection title="For You" user={{ user }} view_more="/recommendations/for-you" lazy_url="/hx-for-you" region={{ region }} auto_start_download={{ auto_download }} />
     <Index.PopularSection title="Popular on Audible" user={{ user }} lazy_url="/hx-fallback" region={{ region }} auto_start_download={{ auto_download }} />
-    {% if show_popular %}
-        <Index.PopularSection title="Popular on this server" user={{ user }} lazy_url="/hx-popular" region={{ region }} auto_start_download={{ auto_download }} />
-    {% endif %}
     <Index.Categories lazy_load={{ True }} region={{ region }} auto_start_download={{ auto_download }} user={{ user }} />
 
 </div>

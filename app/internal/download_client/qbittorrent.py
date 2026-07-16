@@ -1,4 +1,6 @@
+import base64
 from typing import final, override
+from urllib.parse import parse_qs
 
 import aiohttp
 from aiohttp import ClientSession, FormData
@@ -54,12 +56,22 @@ _QbtTorrentList = TypeAdapter(list[_QbtTorrentInfo])
 
 
 def parse_magnet_info_hash(magnet_url: str) -> str | None:
-    """Extract the btih info-hash from a magnet link."""
+    """Extract the btih info-hash from a magnet link as lowercase hex.
+
+    Handles url-encoded params and base32-encoded hashes."""
     if not magnet_url.startswith("magnet:?"):
         return None
-    for param in magnet_url.removeprefix("magnet:?").split("&"):
-        if param.startswith("xt=urn:btih:"):
-            return param.removeprefix("xt=urn:btih:").lower()
+    params = parse_qs(magnet_url.removeprefix("magnet:?"))
+    for xt in params.get("xt", []):
+        if not xt.startswith("urn:btih:"):
+            continue
+        info_hash = xt.removeprefix("urn:btih:")
+        if len(info_hash) == 32:  # base32 variant
+            try:
+                return base64.b32decode(info_hash.upper()).hex()
+            except Exception:
+                return None
+        return info_hash.lower()
     return None
 
 

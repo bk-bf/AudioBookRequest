@@ -1,4 +1,5 @@
 import uuid
+from urllib.parse import urljoin
 
 from aiohttp import ClientSession
 from sqlmodel import Session, col, select
@@ -53,20 +54,59 @@ def get_active_queue_item(
     return None
 
 
-async def _fetch_torrent_bytes(
-    client_session: ClientSession, download_url: str
-) -> bytes | None:
-    async with client_session.get(
-        download_url, headers={"User-Agent": USER_AGENT}
-    ) as r:
-        if not r.ok:
-            logger.warning(
-                "Failed to fetch .torrent, will fall back to magnet",
-                download_url=download_url,
-                status=r.status,
-            )
-            return None
-        return await r.read()
+async def resolve_source_payload(
+    client_session: ClientSession, source: TorrentSource
+) -> tuple[bytes | None, str | None]:
+    """Resolve a source's urls to something a client can consume:
+    (torrent file bytes, magnet link) — at least one is set on success.
+
+    Prowlarr proxies both .torrent files AND magnet links behind its own
+    http download endpoint (a magnet result answers with a redirect to the
+    magnet: URI), so redirects have to be followed manually.
+    """
+    urls = [u for u in (source.download_url, source.magnet_url) if u]
+    for url in urls:
+        if url.startswith("magnet:"):
+            return None, url
+
+    for url in urls:
+        current = url
+        for _ in range(5):  # redirect hop limit
+            try:
+                async with client_session.get(
+                    current,
+                    headers={"User-Agent": USER_AGENT},
+                    allow_redirects=False,
+                ) as r:
+                    if r.status in (301, 302, 303, 307, 308):
+                        location = r.headers.get("Location", "")
+                        if location.startswith("magnet:"):
+                            return None, location
+                        if not location:
+                            break
+                        current = urljoin(current, location)
+                        continue
+                    if r.ok:
+                        content = await r.read()
+                        # bencoded torrent files always start with a dict
+                        if content[:1] == b"d":
+                            return content, None
+                        logger.warning(
+                            "Download url returned non-torrent content",
+                            url=current,
+                            content_type=r.headers.get("Content-Type"),
+                        )
+                    else:
+                        logger.warning(
+                            "Failed to fetch source url",
+                            url=current,
+                            status=r.status,
+                        )
+                    break
+            except Exception as e:
+                logger.warning("Error fetching source url", url=current, error=str(e))
+                break
+    return None, None
 
 
 async def grab_via_client(
@@ -80,11 +120,11 @@ async def grab_via_client(
 
     Raises DownloadClientError on failure.
     """
-    torrent_bytes: bytes | None = None
-    if source.download_url:
-        torrent_bytes = await _fetch_torrent_bytes(client_session, source.download_url)
-    if torrent_bytes is None and not source.magnet_url:
+    torrent_bytes, magnet_url = await resolve_source_payload(client_session, source)
+    if torrent_bytes is None and not magnet_url:
         raise DownloadClientError("Source has no usable download url or magnet link")
+    if magnet_url and magnet_url != source.magnet_url:
+        source = source.model_copy(update={"magnet_url": magnet_url})
 
     category = dc_config.get_category(session)
     info_hash = await client.add_torrent(source, torrent_bytes, category)

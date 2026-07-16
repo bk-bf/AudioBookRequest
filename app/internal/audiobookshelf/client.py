@@ -231,6 +231,19 @@ async def _abs_search(
         return []
 
 
+async def abs_get_item_url(
+    session: Session, client_session: ClientSession, asin: str
+) -> str | None:
+    """Return the Audiobookshelf web-player URL for a book, if it's in the library."""
+    base_url = abs_config.get_base_url(session)
+    if not base_url:
+        return None
+    items = await _abs_search(session, client_session, asin)
+    if not items:
+        return None
+    return posixpath.join(base_url, f"item/{items[0].id}")
+
+
 def _normalize(s: str) -> str:
     s = s.lower().strip()
     s = re.sub(r"[^a-z0-9]+", " ", s)

@@ -4,6 +4,8 @@
     requests: list[AudiobookRequest],
     queue_items: list[DownloadQueueItem],
     region: audible_region_type,
+    extended: ExtendedMetadata | None = None,
+    abs_item_url: str | None = None,
 #}
 
 <BaseLayout title={{ book.title }} user={{ user }}>
@@ -33,6 +35,25 @@
                         {{ book.subtitle }}
                     </h2>
                 {% endif %}
+                {% if extended and extended.series_name %}
+                    <div class="text-sm opacity-80">
+                        <a preload
+                           class="link link-hover"
+                           href="{{ base_url }}/search?q={{ extended.series_name }}">{{ extended.series_name }}</a>
+                        {% if extended.series_sequence %}
+                            #{{ extended.series_sequence }}
+                        {% endif %}
+                    </div>
+                {% endif %}
+                {% if extended and extended.rating_value %}
+                    <div class="text-sm">
+                        <span class="text-warning">★</span>
+                        <span class="font-semibold">{{ extended.rating_value }}</span>
+                        {% if extended.rating_count %}
+                            <span class="opacity-60">({{ "{:,}".format(extended.rating_count) }} ratings)</span>
+                        {% endif %}
+                    </div>
+                {% endif %}
                 <div class="text-sm pt-2">
                     <span class="opacity-60">Author:</span>
                     {% for author in book.authors %}
@@ -56,6 +77,18 @@
                     <span class="opacity-60">Runtime:</span>
                     {{ book.runtime_length_hrs }} hrs
                 </div>
+                {% if extended and extended.publisher_name %}
+                    <div class="text-sm">
+                        <span class="opacity-60">Publisher:</span>
+                        {{ extended.publisher_name }}
+                    </div>
+                {% endif %}
+                {% if extended and extended.language %}
+                    <div class="text-sm">
+                        <span class="opacity-60">Language:</span>
+                        {{ extended.language }}
+                    </div>
+                {% endif %}
                 <div class="text-sm">
                     <span class="opacity-60">Requested by:</span>
                     {% if requests %}
@@ -64,7 +97,22 @@
                         nobody yet
                     {% endif %}
                 </div>
+                {% if extended and extended.genres %}
+                    <div class="flex flex-wrap gap-1 pt-2">
+                        {% for genre in extended.genres %}
+                            <span class="badge badge-outline badge-sm">{{ genre }}</span>
+                        {% endfor %}
+                    </div>
+                {% endif %}
                 <div class="flex flex-wrap gap-2 pt-3">
+                    {% if abs_item_url %}
+                        <a class="btn btn-success btn-sm"
+                           target="_blank"
+                           rel="noopener"
+                           href="{{ abs_item_url }}">
+                            Listen in Audiobookshelf
+                        </a>
+                    {% endif %}
                     {% if user.can_download() and not book.downloaded %}
                         <button class="btn btn-primary btn-sm"
                                 hx-post="{{ base_url }}/book/{{ book.asin }}/hx-auto-download"
@@ -91,6 +139,17 @@
                 </div>
             </div>
         </div>
+
+        {% if extended and extended.publisher_summary %}
+            <div class="flex flex-col gap-2">
+                <h2 class="text-lg font-bold">
+                    Description
+                </h2>
+                <div class="text-sm leading-relaxed opacity-90 [&_p]:pb-2">
+                    {{ extended.publisher_summary | safe }}
+                </div>
+            </div>
+        {% endif %}
 
         <Book.Status user={{ user }} book={{ book }} queue_items={{ queue_items }} />
 

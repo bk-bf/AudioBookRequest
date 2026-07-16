@@ -6,8 +6,10 @@ from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Form, HTTPException, Security
 from sqlmodel import Session, col, delete, desc, select
 
+from app.internal.audible.extended import get_extended_metadata
 from app.internal.audible.single import get_single_book
 from app.internal.audible.types import get_region_from_settings
+from app.internal.audiobookshelf.client import abs_get_item_url
 from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.download_client.config import dc_config
 from app.internal.download_client.grab import get_download_client
@@ -61,6 +63,16 @@ async def book_detail(
     user: Annotated[DetailedUser, Security(ABRAuth())],
 ):
     book, requests, queue_items = await _get_book_context(session, client_session, asin)
+
+    extended = await get_extended_metadata(client_session, asin)
+
+    abs_item_url: str | None = None
+    if book.downloaded:
+        try:
+            abs_item_url = await abs_get_item_url(session, client_session, asin)
+        except Exception as e:
+            logger.debug("ABS item lookup failed", asin=asin, error=str(e))
+
     return catalog_response(
         "Book.Index",
         user=user,
@@ -68,6 +80,8 @@ async def book_detail(
         requests=requests,
         queue_items=queue_items,
         region=get_region_from_settings(),
+        extended=extended,
+        abs_item_url=abs_item_url,
     )
 
 

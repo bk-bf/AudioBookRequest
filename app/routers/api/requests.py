@@ -397,6 +397,7 @@ async def start_auto_download_endpoint(
             start_auto_download=True,
             session=session,
             client_session=client_session,
+            manual=True,
         )
     except HTTPException as e:
         raise ToastException(e.detail) from None

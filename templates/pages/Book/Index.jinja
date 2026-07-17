@@ -112,6 +112,20 @@
                     </div>
                 {% endif %}
                 <div class="flex flex-wrap gap-2 pt-3">
+                    {% set my_request = requests | selectattr("user_username", "equalto", user.username) | list %}
+                    <button class="btn btn-sm {% if my_request %}btn-ghost{% else %}btn-info{% endif %}"
+                            title="{% if my_request %}Remove from wishlist{% else %}Add to wishlist{% endif %}"
+                            hx-post="{{ base_url }}/book/{{ book.asin }}/hx-toggle-request"
+                            hx-disabled-elt="this"
+                            hx-swap="none">
+                        {% if my_request %}
+                            <icons.Ban />
+                            Unrequest
+                        {% else %}
+                            <icons.Plus />
+                            Request
+                        {% endif %}
+                    </button>
                     {% if abs_item_url %}
                         <a class="btn btn-success btn-sm"
                            target="_blank"
@@ -135,6 +149,40 @@
                        href="https://audible{{ audible_regions[region] }}/pd/{{ book.asin }}?ipRedirectOverride=true">
                         View on Audible
                     </a>
+                    {% if user.is_admin() %}
+                        <div class="dropdown dropdown-end">
+                            <div tabindex="0" role="button" class="btn btn-sm">
+                                Tag ▾
+                            </div>
+                            <ul tabindex="0"
+                                class="dropdown-content menu bg-base-200 rounded-box z-50 w-44 p-2 shadow-xl">
+                                <li>
+                                    <button hx-post="{{ base_url }}/book/{{ book.asin }}/hx-set-status"
+                                            hx-vals='{"status": "downloaded"}'
+                                            hx-swap="none">
+                                        <icons.Checkmark />
+                                        Downloaded
+                                    </button>
+                                </li>
+                                <li>
+                                    <button hx-post="{{ base_url }}/book/{{ book.asin }}/hx-set-status"
+                                            hx-vals='{"status": "missing"}'
+                                            hx-swap="none">
+                                        <icons.XMark />
+                                        Missing
+                                    </button>
+                                </li>
+                                <li>
+                                    <button hx-post="{{ base_url }}/book/{{ book.asin }}/hx-set-status"
+                                            hx-vals='{"status": "wanted"}'
+                                            hx-swap="none">
+                                        <icons.Download />
+                                        Wanted
+                                    </button>
+                                </li>
+                            </ul>
+                        </div>
+                    {% endif %}
                 </div>
             </div>
         </div>

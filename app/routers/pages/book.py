@@ -190,10 +190,70 @@ async def book_auto_download(
         session.add(AudiobookRequest(asin=asin, user_username=user.username))
         session.commit()
 
-    background_task.add_task(background_auto_download, asin)
+    background_task.add_task(background_auto_download, asin, True)
     raise ToastException(
-        "Added to wishlist — auto-download queued", "success", cause_refresh=True
+        "Added to wishlist — download queued", "success", cause_refresh=True
     )
+
+
+@router.post("/{asin}/hx-set-status")
+async def book_set_status(
+    asin: str,
+    session: Annotated[Session, Depends(get_session)],
+    admin_user: Annotated[DetailedUser, Security(ABRAuth(GroupEnum.admin))],
+    status: Annotated[str, Form()] = "wanted",
+):
+    """Manually tag a book: wanted / downloaded / missing."""
+    _ = admin_user
+    book = session.get(Audiobook, asin)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if status == "downloaded":
+        book.downloaded = True
+        book.missing = False
+    elif status == "missing":
+        book.downloaded = False
+        book.downloaded_path = None
+        book.missing = True
+    else:  # wanted
+        book.downloaded = False
+        book.downloaded_path = None
+        book.missing = False
+    session.add(book)
+    session.commit()
+    raise ToastException(f"Marked as {status}", "success", cause_refresh=True)
+
+
+@router.post("/{asin}/hx-toggle-request")
+async def book_toggle_request(
+    asin: str,
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    user: Annotated[DetailedUser, Security(ABRAuth())],
+):
+    """Add/remove this book on the user's wishlist from the detail page."""
+    book, _, _ = await _get_book_context(session, client_session, asin)
+    _ = book
+    existing = session.exec(
+        select(AudiobookRequest).where(
+            AudiobookRequest.asin == asin,
+            AudiobookRequest.user_username == user.username,
+        )
+    ).first()
+    if existing:
+        session.delete(existing)
+        session.commit()
+        remaining = session.exec(
+            select(AudiobookRequest).where(AudiobookRequest.asin == asin)
+        ).first()
+        if not remaining:
+            from app.internal.library import abort_active_downloads
+
+            await abort_active_downloads(session, asin)
+        raise ToastException("Removed from wishlist", "success", cause_refresh=True)
+    session.add(AudiobookRequest(asin=asin, user_username=user.username))
+    session.commit()
+    raise ToastException("Added to wishlist", "success", cause_refresh=True)
 
 
 @router.post("/{asin}/hx-abort/{item_id}")

@@ -83,6 +83,8 @@ class Audiobook(BaseSQLModel, table=True):
     )
     downloaded: bool = False
     downloaded_path: str | None = None
+    # download failed or no sources; stays wishlisted, excluded from auto-download
+    missing: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     region: str | None = None  # audible region this metadata came from
 
     requests: list["AudiobookRequest"] = Relationship(back_populates="audiobook")  # pyright: ignore[reportAny]

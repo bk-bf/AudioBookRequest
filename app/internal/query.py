@@ -26,7 +26,15 @@ from app.util.log import logger
 from sqlmodel import col, select
 
 querying: set[str] = set()
-MAX_AUTO_RETRIES = 3
+
+
+def has_any_download_history(session: Session, asin_or_uuid: str) -> bool:
+    try:
+        uuid_obj = uuid.UUID(asin_or_uuid)
+        clause = col(DownloadQueueItem.manual_request_id) == uuid_obj
+    except ValueError:
+        clause = col(DownloadQueueItem.asin) == asin_or_uuid
+    return session.exec(select(DownloadQueueItem).where(clause)).first() is not None
 
 
 def get_failed_source_guids(session: Session, asin_or_uuid: str) -> set[str]:
@@ -75,6 +83,7 @@ async def query_sources(
     force_refresh: bool = False,
     start_auto_download: bool = False,
     only_return_if_cached: bool = False,
+    manual: bool = False,
 ) -> QueryResult:
     # First check if the asin_or_uuid is a UUID (manual request)
     try:
@@ -123,13 +132,23 @@ async def query_sources(
                 )
                 return QueryResult(sources=ranked, book=book, state="ok")
 
-            # skip sources that already failed for this book; give up after a few
-            failed_guids = get_failed_source_guids(session, asin_or_uuid)
-            if len(failed_guids) >= MAX_AUTO_RETRIES:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Too many failed download attempts for this book",
+            # ONCE-ONLY: a book is downloaded automatically at most once, ever.
+            # Any prior attempt (failed or not) blocks automatic re-grabs; only a
+            # manual action (button/bulk) may try again.
+            if not manual and has_any_download_history(session, asin_or_uuid):
+                logger.info(
+                    "Auto-download skipped: book already attempted once",
+                    asin=asin_or_uuid,
                 )
+                return QueryResult(sources=ranked, book=book, state="ok")
+            if not manual and isinstance(book, Audiobook) and book.missing:
+                logger.info(
+                    "Auto-download skipped: book marked missing", asin=asin_or_uuid
+                )
+                return QueryResult(sources=ranked, book=book, state="ok")
+
+            # manual retries still skip sources that already failed
+            failed_guids = get_failed_source_guids(session, asin_or_uuid)
             candidate = next((s for s in ranked if s.guid not in failed_guids), None)
             if candidate is None:
                 raise HTTPException(
@@ -146,6 +165,10 @@ async def query_sources(
                 prowlarr_source=candidate,
             )
             if resp.ok:
+                if isinstance(book, Audiobook) and book.missing:
+                    book.missing = False
+                    session.add(book)
+                    session.commit()
                 # Try to trigger an ABS scan to pick up new media
                 try:
                     if abs_config.is_valid(session):
@@ -179,7 +202,7 @@ async def background_start_query(asin_or_uuid: str, auto_download: bool):
 _auto_download_inflight: set[str] = set()
 
 
-async def background_auto_download(asin_or_uuid: str):
+async def background_auto_download(asin_or_uuid: str, manual: bool = False):
     """Guarded background auto-download: dedupes concurrent attempts per book."""
     if asin_or_uuid in _auto_download_inflight:
         logger.info("Auto-download already in flight", asin=asin_or_uuid)
@@ -195,6 +218,7 @@ async def background_auto_download(asin_or_uuid: str):
                     session=session,
                     client_session=client_session,
                     start_auto_download=True,
+                    manual=manual,
                 )
     except Exception as e:
         logger.info("Background auto-download failed", asin=asin_or_uuid, error=str(e))

@@ -1,5 +1,6 @@
 {#def
     downloaded: bool = False,
+    missing: bool = False,
     queue: DownloadQueueItem | None = None,
     requesters: str = "",
 #}
@@ -26,6 +27,8 @@
     {% endif %}
 {% elif downloaded %}
     <span class="badge badge-success">Downloaded</span>
+{% elif missing %}
+    <span class="badge badge-warning" title="Download failed or no sources yet">Missing</span>
 {% else %}
     <span class="text-xs opacity-40">—</span>
 {% endif %}

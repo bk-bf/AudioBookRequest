@@ -85,7 +85,7 @@ async def bulk_action(
         if not user.can_download():
             raise ToastException("Not allowed to download", "error")
         for asin in asins:
-            background_task.add_task(background_auto_download, asin)
+            background_task.add_task(background_auto_download, asin, True)
     elif action == "delete":
         for asin in asins:
             if page == "downloaded":

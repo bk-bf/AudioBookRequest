@@ -16,6 +16,9 @@
             <span class="badge badge-success">Downloaded</span>
         {% elif active %}
             <span class="badge badge-info">Downloading</span>
+        {% elif book.missing %}
+            <span class="badge badge-warning"
+                  title="Download failed or no sources — kept on the wishlist; retry manually anytime">Missing</span>
         {% else %}
             <span class="badge badge-ghost">Wanted</span>
         {% endif %}

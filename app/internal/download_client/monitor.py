@@ -16,7 +16,7 @@ from app.internal.download_client.grab import (
     get_download_client,
 )
 from app.internal.download_client.importer import import_queue_item
-from app.internal.models import DownloadQueueItem, DownloadStateEnum
+from app.internal.models import Audiobook, DownloadQueueItem, DownloadStateEnum
 from app.internal.prowlarr.util import prowlarr_config
 from app.internal.ranking.quality import quality_config
 from app.util.db import get_session
@@ -33,13 +33,17 @@ _last_auto_attempt: dict[str, float] = {}
 
 
 async def _handle_failed_item(session: Session, item: DownloadQueueItem, reason: str):
-    """A download failed: clean the torrent + data out of the client and
-    retry with the next-best source (failed guids are excluded on retry)."""
-    from app.internal.query import background_auto_download
-
+    """A download failed: clean the torrent + data out of the client and tag
+    the book as missing. NO automatic retry - a book is only ever downloaded
+    once automatically; the user can retry manually from the book page."""
     item.state = DownloadStateEnum.error
     item.error = reason
     session.add(item)
+    if item.asin:
+        book = session.get(Audiobook, item.asin)
+        if book and not book.downloaded:
+            book.missing = True
+            session.add(book)
     session.commit()
     client = get_download_client(session)
     if client and item.download_id:
@@ -52,15 +56,11 @@ async def _handle_failed_item(session: Session, item: DownloadQueueItem, reason:
                 error=str(e),
             )
     logger.info(
-        "Download failed, retrying with next-best source",
+        "Download failed - book tagged missing, no auto-retry",
         title=item.source_title,
         reason=reason,
         asin=item.asin,
     )
-    if item.asin:
-        asyncio.create_task(background_auto_download(item.asin))
-    elif item.manual_request_id:
-        asyncio.create_task(background_auto_download(str(item.manual_request_id)))
 
 
 def _active_items(session: Session) -> list[DownloadQueueItem]:
@@ -159,9 +159,16 @@ async def auto_download_sweep():
 
         retry_seconds = dc_config.get_auto_retry_minutes(session) * 60
         results = get_wishlist_results(session, None, "not_downloaded")
+        from app.internal.query import has_any_download_history
+
         candidates: list[str] = []
         for result in results:
             asin = result.book.asin
+            if result.book.missing:
+                continue
+            # once-only: anything attempted before is never auto-grabbed again
+            if has_any_download_history(session, asin):
+                continue
             if get_active_queue_item(session, asin):
                 continue
             if time.time() - _last_auto_attempt.get(asin, 0) < retry_seconds:
@@ -186,11 +193,18 @@ async def auto_download_sweep():
                         start_auto_download=True,
                     )
                 except Exception as e:
-                    logger.info(
-                        "Auto-download attempt failed, will retry later",
-                        asin=asin,
-                        error=str(e),
-                    )
+                    logger.info("Auto-download attempt failed", asin=asin, error=str(e))
+                # one shot only: if the attempt didn't produce a download,
+                # tag the book missing so it's visible and never re-queried
+                if not has_any_download_history(session, asin):
+                    book = session.get(Audiobook, asin)
+                    if book and not book.downloaded and not book.missing:
+                        book.missing = True
+                        session.add(book)
+                        session.commit()
+                        logger.info(
+                            "Book tagged missing (no grabbable source)", asin=asin
+                        )
 
 
 @asynccontextmanager

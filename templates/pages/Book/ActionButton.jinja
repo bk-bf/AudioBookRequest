@@ -42,7 +42,11 @@
                 hx-disabled-elt="this"
                 hx-swap="none">
             <icons.Download />
-            Auto Download
+            {% if book.missing %}
+                Retry Download
+            {% else %}
+                Auto Download
+            {% endif %}
         </button>
     </div>
 {% else %}

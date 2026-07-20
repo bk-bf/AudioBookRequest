@@ -9,11 +9,12 @@
 #}
 
 <div id="filter-bar" class="flex flex-wrap items-center gap-2 pb-2">
+    <input type="hidden" name="page" value="{{ page }}" />
     <select name="sort_by"
             class="select select-sm w-36"
             title="Sort by"
             hx-get="{{ base_url }}{{ endpoint }}"
-            hx-include="#filter-bar select"
+            hx-include="#filter-bar select, #filter-bar input[type=hidden]"
             hx-target="#book-table-body"
             hx-swap="outerHTML">
         <option value="added" {% if sort_by.__eq__("added") %}selected{% endif %}>
@@ -45,7 +46,7 @@
                 class="select select-sm w-36"
                 title="Filter by requester"
                 hx-get="{{ base_url }}{{ endpoint }}"
-                hx-include="#filter-bar select"
+                hx-include="#filter-bar select, #filter-bar input[type=hidden]"
                 hx-target="#book-table-body"
                 hx-swap="outerHTML">
             <option value="">

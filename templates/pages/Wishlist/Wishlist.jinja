@@ -16,7 +16,7 @@
         <Wishlist.Tablist page={{ page }} counts={{ counts }} />
     {% endif %}
 
-    <WishlistFilterBar page={{ page }} user={{ user }} sort_by={{ sort_by }} requested_by={{ requested_by }} usernames={{ usernames }} endpoint="/wishlist/hx-poll?page={{ page }}" bulk={{ True }} />
+    <WishlistFilterBar page={{ page }} user={{ user }} sort_by={{ sort_by }} requested_by={{ requested_by }} usernames={{ usernames }} endpoint="/wishlist/hx-poll" bulk={{ True }} />
 
     {% if not results %}
         <div role="alert" class="alert my-2">

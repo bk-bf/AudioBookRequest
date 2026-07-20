@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import posixpath
-import re
 from datetime import datetime
 from typing import Iterable, Literal
 
@@ -245,12 +244,6 @@ async def abs_get_item_url(
     return posixpath.join(base_url, f"item/{items[0].id}")
 
 
-def _normalize(s: str) -> str:
-    s = s.lower().strip()
-    s = re.sub(r"[^a-z0-9]+", " ", s)
-    return re.sub(r"\s+", " ", s).strip()
-
-
 async def abs_book_exists(
     session: Session,
     client_session: ClientSession,
@@ -259,45 +252,18 @@ async def abs_book_exists(
     """
     Heuristic check if a book exists in ABS library by searching by ASIN and title/author.
     """
-    # Try ASIN first
-    candidates: list[ABSBookItem] = []
-    if book.asin:
-        candidates = await _abs_search(session, client_session, book.asin)
-        logger.debug(
-            "ABS: ASIN search results",
-            asin=book.asin,
-            candidate_count=len(candidates),
-        )
-    if not candidates:
-        logger.debug(
-            "ABS: ASIN search yielded no results. Checking with title",
-            asin=book.asin,
-        )
-        q = f"{book.title}".strip()
-        candidates = await _abs_search(session, client_session, q)
-
-    if not candidates:
+    # ASIN-only: title/author fallback matching marked other-language and
+    # other-edition duplicates (same title, same author, different narrator)
+    # as downloaded, resurrecting them on the Downloaded tab constantly.
+    # The hourly library sync stamps canonical ASINs, so exact ASIN identity
+    # is both available and the only reliable signal.
+    if not book.asin:
         return False
-
-    norm_title = _normalize(book.title)
-    norm_authors = {_normalize(a) for a in book.authors}
-
-    for it in candidates:
-        # An exact ASIN match is conclusive on its own
-        if it.media.metadata.asin and it.media.metadata.asin == book.asin:
-            return True
-        # ABS search returns different shapes, try best-effort
-        title = it.media.metadata.title
-        if not title:
-            logger.debug("ABS: search result missing title", item=it)
-            continue
-        authors = it.media.metadata.authors
-        if _normalize(title) == norm_title:
-            if not norm_authors or any(
-                _normalize(a.name) in norm_authors for a in authors
-            ):
-                return True
-    return False
+    candidates = await _abs_search(session, client_session, book.asin)
+    return any(
+        it.media.metadata.asin and it.media.metadata.asin == book.asin
+        for it in candidates
+    )
 
 
 _abs_exists_cache: SimpleCache[bool, str] = SimpleCache()

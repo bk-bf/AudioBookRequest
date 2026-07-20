@@ -16,6 +16,23 @@ from app.internal.models import (
 )
 
 
+def upsert_book_preserving_state(session: Session, book: Audiobook) -> Audiobook:
+    """Merge a freshly-fetched (transient) Audiobook into the DB WITHOUT
+    clobbering local state. session.merge() copies every field, so a fresh
+    Audible result (downloaded=False, missing=False, path=None) would silently
+    reset a downloaded or missing book - the root cause of books "vanishing"
+    from the library and being re-downloaded."""
+    existing = session.get(Audiobook, book.asin)
+    if existing:
+        book.downloaded = existing.downloaded or book.downloaded
+        book.downloaded_path = existing.downloaded_path or book.downloaded_path
+        book.missing = existing.missing
+        book.region = book.region or existing.region
+        if existing.cover_image and not book.cover_image:
+            book.cover_image = existing.cover_image
+    return session.merge(book)
+
+
 class WishlistCounts(BaseModel):
     requests: int
     downloaded: int

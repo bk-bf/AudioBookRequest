@@ -334,11 +334,13 @@ async def abs_mark_downloaded_flags(
                 _abs_exists_cache.set(exists, f"abs-exists:{b.asin}")
             logger.debug("ABS: exist check", asin=b.asin, exists=exists)
             if exists:
-                b.downloaded = True
-                # merge: the book may be a transient Audible search result that
-                # isn't attached to the session (or not in the table yet)
-                merged = session.merge(b)
-                merged.downloaded = True
+                b.downloaded = True  # for the page being rendered
+                # persist ONLY onto an existing row; inserting the transient
+                # object here created phantom duplicate library entries
+                existing = session.get(Audiobook, b.asin)
+                if existing and not existing.downloaded:
+                    existing.downloaded = True
+                    session.add(existing)
         except Exception as e:
             logger.debug("ABS: failed exist check", asin=b.asin, error=str(e))
 

@@ -46,8 +46,14 @@ async def list_similar_audible_books(
     cache_key = _SimsCacheKey(region=audible_region, num_results=num_results, asin=asin)
     cache_result = sims_cache.get(cache_key)
     if cache_result and time.time() - cache_result.timestamp < REFETCH_TTL:
-        # Merge cached ORM instances into the current session to avoid cross-session attachment errors
-        merged = [session.merge(book) for book in cache_result.value]
+        # Merge cached ORM instances into the current session to avoid
+        # cross-session attachment errors - preserving local library state
+        from app.internal.db_queries import upsert_book_preserving_state
+
+        merged = [
+            upsert_book_preserving_state(session, book.model_copy())
+            for book in cache_result.value
+        ]
         logger.debug("Using cached popular books", region=audible_region)
         return merged
 

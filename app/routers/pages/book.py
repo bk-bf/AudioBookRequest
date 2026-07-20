@@ -132,7 +132,9 @@ async def book_similar(
         logger.warning("Similar titles lookup failed", asin=asin, error=str(e))
         books = []
     books = [b for b in books if b.asin != asin]
-    merged = [session.merge(b) for b in books]
+    from app.internal.db_queries import upsert_book_preserving_state
+
+    merged = [upsert_book_preserving_state(session, b) for b in books]
     session.commit()
     await flag_abs_downloaded_items(session, client_session, merged)
     results = [

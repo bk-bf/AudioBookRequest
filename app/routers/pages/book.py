@@ -19,6 +19,7 @@ from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.download_client.grab import get_active_queue_item, get_download_client
 from app.internal.library import (
     delete_imported_files,
+    list_library_folders,
     suggest_folders_for_book,
 )
 from app.internal.query import background_auto_download
@@ -93,11 +94,12 @@ async def book_detail(
 
     path_ok: bool | None = None
     path_suggestions: list[str] = []
+    library_folders: list[str] = []
     if user.is_admin():
         if book.downloaded_path:
             path_ok = _Path(book.downloaded_path).exists()
-        if not book.downloaded_path or not path_ok:
-            path_suggestions = suggest_folders_for_book(session, book)
+        path_suggestions = suggest_folders_for_book(session, book)
+        library_folders = list_library_folders(session)
 
     return catalog_response(
         "Book.Index",
@@ -111,6 +113,7 @@ async def book_detail(
         active_item=get_active_queue_item(session, asin),
         path_ok=path_ok,
         path_suggestions=path_suggestions,
+        library_folders=library_folders,
     )
 
 
@@ -282,6 +285,15 @@ async def book_set_path(
     book.downloaded = True
     book.missing = False
     session.add(book)
+    # stale failed download attempts no longer describe reality once the
+    # files are linked manually - drop them from the history
+    for stale in session.exec(
+        select(DownloadQueueItem).where(
+            col(DownloadQueueItem.asin) == asin,
+            col(DownloadQueueItem.state) == DownloadStateEnum.error,
+        )
+    ).all():
+        session.delete(stale)
     session.commit()
     raise ToastException(
         "Files linked — marked as downloaded", "success", cause_refresh=True

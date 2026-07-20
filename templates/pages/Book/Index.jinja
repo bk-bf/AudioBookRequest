@@ -9,6 +9,7 @@
     active_item: DownloadQueueItem | None = None,
     path_ok: bool | None = None,
     path_suggestions: list[str] = [],
+    library_folders: list[str] = [],
 #}
 
 <BaseLayout title={{ book.title }} user={{ user }}>
@@ -233,9 +234,17 @@
                         <input id="link-path-input"
                                name="path"
                                type="text"
+                               list="library-folders"
+                               autocomplete="off"
                                placeholder="/audiobooks/Author/Title"
                                value="{{ book.downloaded_path or '' }}"
                                class="input w-full font-mono text-sm" />
+                        <datalist id="library-folders">
+                            {% for folder in library_folders %}
+                                <option value="{{ folder }}">
+                                </option>
+                            {% endfor %}
+                        </datalist>
                         {% if path_suggestions %}
                             <span class="text-xs opacity-60">Suggestions from disk (click to fill):</span>
                             <div class="flex flex-col gap-1 max-h-48 overflow-y-auto">

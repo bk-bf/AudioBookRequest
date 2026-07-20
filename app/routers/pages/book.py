@@ -17,7 +17,10 @@ from app.internal.audiobookshelf.client import (
 )
 from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.download_client.grab import get_active_queue_item, get_download_client
-from app.internal.library import delete_imported_files
+from app.internal.library import (
+    delete_imported_files,
+    suggest_folders_for_book,
+)
 from app.internal.query import background_auto_download
 from app.internal.models import (
     Audiobook,
@@ -86,6 +89,16 @@ async def book_detail(
         except Exception as e:
             logger.debug("ABS item lookup failed", asin=asin, error=str(e))
 
+    from pathlib import Path as _Path
+
+    path_ok: bool | None = None
+    path_suggestions: list[str] = []
+    if user.is_admin():
+        if book.downloaded_path:
+            path_ok = _Path(book.downloaded_path).exists()
+        if not book.downloaded_path or not path_ok:
+            path_suggestions = suggest_folders_for_book(session, book)
+
     return catalog_response(
         "Book.Index",
         user=user,
@@ -96,6 +109,8 @@ async def book_detail(
         extended=extended,
         abs_item_url=abs_item_url,
         active_item=get_active_queue_item(session, asin),
+        path_ok=path_ok,
+        path_suggestions=path_suggestions,
     )
 
 
@@ -224,6 +239,53 @@ async def book_set_status(
     session.add(book)
     session.commit()
     raise ToastException(f"Marked as {status}", "success", cause_refresh=True)
+
+
+@router.post("/{asin}/hx-set-path")
+async def book_set_path(
+    asin: str,
+    session: Annotated[Session, Depends(get_session)],
+    admin_user: Annotated[DetailedUser, Security(ABRAuth(GroupEnum.admin))],
+    path: Annotated[str, Form()] = "",
+):
+    """Sonarr-style manual path linking: point a book at files that already
+    exist on disk, fix a moved folder, or unlink entirely."""
+    _ = admin_user
+    book = session.get(Audiobook, asin)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    path = path.split("  (linked to another book)")[0].strip()
+    if not path:
+        book.downloaded = False
+        book.downloaded_path = None
+        session.add(book)
+        session.commit()
+        raise ToastException(
+            "Path unlinked — book back to wanted", "success", cause_refresh=True
+        )
+
+    from pathlib import Path as _Path
+
+    from app.internal.download_client.config import dc_config
+
+    library_dir = dc_config.get_library_dir(session)
+    target = _Path(path).resolve()
+    if library_dir:
+        lib = _Path(library_dir).resolve()
+        if target != lib and lib not in target.parents:
+            raise ToastException(
+                f"Path must be inside the library ({library_dir})", "error"
+            )
+    if not target.exists():
+        raise ToastException(f"Path does not exist: {target}", "error")
+    book.downloaded_path = str(target)
+    book.downloaded = True
+    book.missing = False
+    session.add(book)
+    session.commit()
+    raise ToastException(
+        "Files linked — marked as downloaded", "success", cause_refresh=True
+    )
 
 
 @router.post("/{asin}/hx-toggle-request")

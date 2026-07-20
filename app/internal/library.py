@@ -1,5 +1,8 @@
+import os
 import shutil
 from pathlib import Path
+
+from rapidfuzz import fuzz, utils
 
 from sqlmodel import Session, col, delete, select
 
@@ -11,6 +14,64 @@ from app.internal.models import (
     DownloadQueueItem,
 )
 from app.util.log import logger
+
+
+def list_library_folders(session: Session, max_depth: int = 2) -> list[str]:
+    """All directories under the library root (depth-limited)."""
+    library_dir = dc_config.get_library_dir(session)
+    if not library_dir or not Path(library_dir).is_dir():
+        return []
+    root = Path(library_dir)
+    folders: list[str] = []
+    for dirpath, dirnames, _ in os.walk(root):
+        depth = len(Path(dirpath).relative_to(root).parts)
+        if depth >= max_depth:
+            dirnames.clear()
+        if dirpath != str(root):
+            folders.append(dirpath)
+    return sorted(folders)
+
+
+def suggest_folders_for_book(
+    session: Session, book: Audiobook, limit: int = 8
+) -> list[str]:
+    """Fuzzy-match on-disk folders against the book (Sonarr-style manual
+    linking): lets a wishlisted book be connected to files that already exist."""
+    folders = list_library_folders(session)
+    if not folders:
+        return []
+    linked = {
+        b.downloaded_path
+        for b in session.exec(
+            select(Audiobook).where(col(Audiobook.downloaded_path).is_not(None))
+        ).all()
+        if b.asin != book.asin
+    }
+    target = f"{book.authors[0] if book.authors else ''} {book.title}"
+    scored = sorted(
+        (
+            (
+                max(
+                    fuzz.token_set_ratio(
+                        book.title, Path(f).name, processor=utils.default_process
+                    ),
+                    fuzz.token_set_ratio(
+                        target, Path(f).name, processor=utils.default_process
+                    ),
+                ),
+                f,
+            )
+            for f in folders
+        ),
+        reverse=True,
+    )
+    out: list[str] = []
+    for score, folder in scored:
+        if score < 45 or len(out) >= limit:
+            break
+        suffix = "  (linked to another book)" if folder in linked else ""
+        out.append(folder + suffix)
+    return out
 
 
 def delete_imported_files(session: Session, downloaded_path: str) -> bool:

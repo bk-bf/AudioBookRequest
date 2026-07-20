@@ -2,6 +2,7 @@
     user: DetailedUser,
     book: Audiobook,
     queue_items: list[DownloadQueueItem],
+    path_ok: bool | None = None,
 #}
 
 {% set active = queue_items | selectattr("state.is_active") | list %}
@@ -27,6 +28,13 @@
         <div class="text-sm">
             <span class="opacity-60">Path:</span>
             <span class="font-mono break-all">{{ book.downloaded_path }}</span>
+            {% if path_ok is true %}
+                <span class="badge badge-success badge-xs align-middle"
+                      title="Files present on disk">✓</span>
+            {% elif path_ok is false %}
+                <span class="badge badge-error badge-xs align-middle"
+                      title="Nothing found at this path — files moved or deleted. Use Edit Path to relink.">files not found</span>
+            {% endif %}
         </div>
     {% endif %}
     {% if queue_items %}

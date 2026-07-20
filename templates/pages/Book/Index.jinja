@@ -7,6 +7,8 @@
     extended: ExtendedMetadata | None = None,
     abs_item_url: str | None = None,
     active_item: DownloadQueueItem | None = None,
+    path_ok: bool | None = None,
+    path_suggestions: list[str] = [],
 #}
 
 <BaseLayout title={{ book.title }} user={{ user }}>
@@ -150,6 +152,15 @@
                         View on Audible
                     </a>
                     {% if user.is_admin() %}
+                        <button type="button"
+                                class="btn btn-sm {% if path_ok is false %}btn-warning{% endif %}"
+                                onclick="link_files_modal.showModal()">
+                            {% if book.downloaded_path %}
+                                Edit Path
+                            {% else %}
+                                Link Files
+                            {% endif %}
+                        </button>
                         <div class="dropdown dropdown-end">
                             <div tabindex="0" role="button" class="btn btn-sm">
                                 Tag ▾
@@ -198,7 +209,58 @@
             </div>
         {% endif %}
 
-        <Book.Status user={{ user }} book={{ book }} queue_items={{ queue_items }} />
+        <Book.Status user={{ user }} book={{ book }} queue_items={{ queue_items }} path_ok={{ path_ok }} />
+
+        {% if user.is_admin() %}
+            <dialog id="link_files_modal" class="modal">
+                <div class="modal-box max-w-2xl">
+                    <h3 class="text-lg font-bold">
+                        Link files on disk
+                    </h3>
+                    <p class="py-1 text-sm opacity-70">
+                        Point this book at an existing folder in the library (e.g. files that were
+                        downloaded outside ABR, or moved). Leave empty and save to unlink.
+                    </p>
+                    {% if path_ok is false %}
+                        <div class="alert alert-warning my-2 text-sm">
+                            Stored path no longer exists on disk: <span class="font-mono">{{ book.downloaded_path }}</span>
+                        </div>
+                    {% endif %}
+                    <form class="flex flex-col gap-2"
+                          hx-post="{{ base_url }}/book/{{ book.asin }}/hx-set-path"
+                          hx-disabled-elt="find button[type='submit']"
+                          hx-swap="none">
+                        <input id="link-path-input"
+                               name="path"
+                               type="text"
+                               placeholder="/audiobooks/Author/Title"
+                               value="{{ book.downloaded_path or '' }}"
+                               class="input w-full font-mono text-sm" />
+                        {% if path_suggestions %}
+                            <span class="text-xs opacity-60">Suggestions from disk (click to fill):</span>
+                            <div class="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                                {% for folder in path_suggestions %}
+                                    <button type="button"
+                                            class="btn btn-ghost btn-xs justify-start font-mono normal-case"
+                                            onclick="document.getElementById('link-path-input').value = this.dataset.p"
+                                            data-p="{{ folder }}">
+                                        {{ folder }}
+                                    </button>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            Save
+                        </button>
+                    </form>
+                </div>
+                <form method="dialog" class="modal-backdrop">
+                    <button>
+                        close
+                    </button>
+                </form>
+            </dialog>
+        {% endif %}
 
         <div hx-get="{{ base_url }}/book/{{ book.asin }}/hx-similar"
              hx-trigger="load"

@@ -22,33 +22,38 @@ class DynamicSessionMiddleware:
     ):
         self.app = app
         self.secret_key = secret_key
-        self.expiry = max_age
-        self.session_middleware = SessionMiddleware(
-            app,
-            secret_key,
-            same_site="strict",
-            max_age=max_age or Second(60 * 60 * 24 * 14),
-        )
+        # Normalize to the effective lifetime so it is never None. A None max_age
+        # makes Starlette emit a cookie without Max-Age (a session cookie that
+        # dies on browser close), which is what logged users out of Brave mobile.
+        self.expiry = max_age or Second(60 * 60 * 24 * 14)
+        self.session_middleware = self._build()
         linker.add_middleware(self)
+
+    def _build(self) -> SessionMiddleware:
+        return SessionMiddleware(
+            self.app,
+            self.secret_key,
+            # "lax", not "strict": Strict withholds the session cookie on any
+            # top-level navigation that isn't already same-site, so reopening the
+            # app from a bookmark / home-screen shortcut / external link (the norm
+            # on mobile) sends no cookie and the user gets bounced to /login. This
+            # is what logged people out of Brave on mobile after closing the tab.
+            # Lax still sends the cookie on top-level GETs while blocking cross-site
+            # POST/subresource CSRF.
+            same_site="lax",
+            max_age=self.expiry,
+        )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         return await self.session_middleware(scope, receive, send)
 
     def update_secret(self, secret_key: str):
-        self.session_middleware = SessionMiddleware(
-            self.app,
-            secret_key,
-            same_site="strict",
-            max_age=self.expiry,
-        )
+        self.secret_key = secret_key
+        self.session_middleware = self._build()
 
     def update_max_age(self, max_age: Second):
-        self.session_middleware = SessionMiddleware(
-            self.app,
-            self.secret_key,
-            same_site="strict",
-            max_age=max_age,
-        )
+        self.expiry = max_age
+        self.session_middleware = self._build()
 
 
 class DynamicMiddlewareLinker:

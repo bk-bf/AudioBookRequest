@@ -27,6 +27,7 @@ from app.util.fetch_js import fetch_scripts
 from app.util.log import logger
 from app.util.redirect import BaseUrlRedirectResponse
 from app.util.templates import catalog_response
+from app.util.time import Second
 from app.util.toast import ToastException
 
 # intialize js dependencies or throw an error if not in debug mode
@@ -34,6 +35,7 @@ fetch_scripts(Settings().app.debug)
 
 with next(get_session()) as session:
     auth_secret = auth_config.get_auth_secret(session)
+    session_max_age = Second(auth_config.get_access_token_expiry_minutes(session) * 60)
     initialize_force_login_type(session)
     clear_old_book_caches(session)
 
@@ -44,7 +46,12 @@ app = FastAPI(
     openapi_url="/openapi.json" if Settings().app.openapi_enabled else None,
     description="API for AudiobookRequest",
     middleware=[
-        Middleware(DynamicSessionMiddleware, auth_secret, middleware_linker),
+        Middleware(
+            DynamicSessionMiddleware,
+            auth_secret,
+            middleware_linker,
+            max_age=session_max_age,
+        ),
         Middleware(GZipMiddleware),
     ],
     root_path=Settings().app.base_url.rstrip("/"),

@@ -144,3 +144,37 @@ def rejection(title: str) -> tuple[str, str] | None:
 
 def is_rejected_release(title: str) -> bool:
     return rejection(title) is not None
+
+
+# Spoken-word releases are typically 32-64 kbps mono; this sits below anything
+# genuine while still catching a music album standing in for a long book.
+MIN_PLAUSIBLE_KBPS = 24
+MIN_COMPARABLE_MINUTES = 30
+
+
+def implausible_size(size_bytes: int, runtime_minutes: int | None) -> str | None:
+    """Reject a release that cannot possibly contain the book, whatever its
+    title claims.
+
+    Title filtering cannot separate an audiobook from a music album of the same
+    name - "Lady of the Lake" returns four albums and a single classical track,
+    none of them the book. But a 12-hour audiobook cannot fit in 40 MB, and
+    that is decidable before grabbing anything.
+
+    Only a floor is applied. An upper bound would misfire on lossless rips,
+    which are legitimately enormous - so a big mislabelled release (a FLAC
+    album, say) still gets through here and is caught after download by the
+    runtime check in download_client/verify.py.
+    """
+    if not runtime_minutes or runtime_minutes < MIN_COMPARABLE_MINUTES:
+        return None
+    if size_bytes <= 0:
+        return None  # size unknown - not evidence of anything
+    min_bytes = runtime_minutes * 60 * (MIN_PLAUSIBLE_KBPS * 1000 / 8)
+    if size_bytes < min_bytes:
+        return (
+            f"{size_bytes / 1e6:.0f} MB is too small for a "
+            f"{runtime_minutes / 60:.1f}h book (needs ~{min_bytes / 1e6:.0f} MB "
+            f"even at {MIN_PLAUSIBLE_KBPS} kbps)"
+        )
+    return None

@@ -8,7 +8,7 @@ from rapidfuzz import fuzz, utils
 from sqlmodel import Session
 
 from app.internal.models import Audiobook, ManualBookRequest, ProwlarrSource
-from app.internal.ranking.media_kind import rejection
+from app.internal.ranking.media_kind import implausible_size, rejection
 from app.internal.ranking.quality import quality_config
 from app.internal.ranking.quality_extract import Quality, extract_qualities
 from app.util.log import logger
@@ -32,7 +32,22 @@ async def rank_sources(
 
     # Belt and braces: query_prowlarr already drops these at the boundary, but
     # sources also reach here from the cache and from callers that bypass it.
-    audio_sources = [s for s in sources if not rejection(s.title)]
+    # The size check lives here rather than at the boundary because it depends
+    # on which book was asked for, and the source cache is shared by title.
+    runtime = getattr(book, "runtime_length_min", None)
+    audio_sources: list[ProwlarrSource] = []
+    for source in sources:
+        if rejection(source.title):
+            continue
+        too_small = implausible_size(source.size, runtime)
+        if too_small:
+            logger.info(
+                "Rejected release too small for the book",
+                source_title=source.title,
+                reason=too_small,
+            )
+            continue
+        audio_sources.append(source)
 
     coros = [get_qualities(source) for source in audio_sources]
     rank_sources = [x for y in await asyncio.gather(*coros) for x in y]

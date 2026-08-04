@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Annotated, Literal, Union, cast
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import event
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, func
 from sqlmodel._compat import SQLModelConfig
 from sqlmodel.main import Relationship
@@ -83,6 +84,10 @@ class Audiobook(BaseSQLModel, table=True):
     )
     downloaded: bool = False
     downloaded_path: str | None = None
+    # When the book entered the library. NOT the same as updated_at, which is the
+    # audible metadata cache marker and gets re-stamped by every search/refetch.
+    # Maintained by the _stamp_downloaded_at listener below.
+    downloaded_at: datetime | None = None
     # download failed or no sources; stays wishlisted, excluded from auto-download
     missing: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     region: str | None = None  # audible region this metadata came from
@@ -96,6 +101,34 @@ class Audiobook(BaseSQLModel, table=True):
     @property
     def runtime_length_hrs(self):
         return round(self.runtime_length_min / 60, 1)
+
+
+@event.listens_for(Audiobook.downloaded, "set", active_history=True)
+def _stamp_downloaded_at(  # pyright: ignore[reportUnusedFunction]
+    target: Audiobook, value: bool, oldvalue: object, initiator: object
+) -> bool:
+    """Keep downloaded_at in sync with the downloaded flag, wherever it's
+    flipped (importer, ABS sync, prowlarr hand-off, manual tagging, API).
+    Doing it here rather than at each call site means a new write path can't
+    forget to stamp it."""
+    _ = initiator
+    if value and oldvalue is not True:
+        target.downloaded_at = datetime.now()
+    elif not value and oldvalue is True:
+        target.downloaded_at = None
+    return value
+
+
+@event.listens_for(Audiobook, "before_insert")
+def _stamp_downloaded_at_on_insert(  # pyright: ignore[reportUnusedFunction]
+    mapper: object, connection: object, target: Audiobook
+) -> None:
+    """SQLModel's __init__ writes straight to __dict__, so the 'set' listener
+    never fires for a book constructed already-downloaded (the ABS library
+    sync does exactly that). Catch those at insert time."""
+    _ = mapper, connection
+    if target.downloaded and target.downloaded_at is None:
+        target.downloaded_at = datetime.now()
 
 
 class AudiobookWithRequests(BaseModel):

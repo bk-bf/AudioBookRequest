@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal, Sequence, cast
 
 from pydantic import BaseModel
@@ -26,6 +27,10 @@ def upsert_book_preserving_state(session: Session, book: Audiobook) -> Audiobook
     if existing:
         book.downloaded = existing.downloaded or book.downloaded
         book.downloaded_path = existing.downloaded_path or book.downloaded_path
+        # must come after `downloaded` above: flipping that flag stamps a fresh
+        # downloaded_at, which would reset the library position of a book we
+        # merely re-fetched metadata for
+        book.downloaded_at = existing.downloaded_at or book.downloaded_at
         book.missing = existing.missing
         book.region = book.region or existing.region
         if existing.cover_image and not book.cover_image:
@@ -81,6 +86,21 @@ def get_wishlist_counts(session: Session, user: User | None = None) -> WishlistC
     )
 
 
+def _added_at(result: AudiobookWishlistResult) -> datetime:
+    """When this entry joined the list the user is looking at: the library
+    date for downloaded books, otherwise the date it was first requested.
+
+    Deliberately NOT book.updated_at - that is the audible metadata cache
+    marker, re-stamped by every search and refetch, so sorting on it floats
+    long-downloaded books back to the top.
+    """
+    if result.book.downloaded:
+        return result.book.downloaded_at or result.book.updated_at
+    if result.requests:
+        return min(req.updated_at for req in result.requests)
+    return result.book.updated_at
+
+
 def sort_wishlist_results(
     results: list[AudiobookWishlistResult], sort_by: str
 ) -> list[AudiobookWishlistResult]:
@@ -100,19 +120,23 @@ def sort_wishlist_results(
                 ),
             )
         case "downloaded_at":
-            return sorted(results, key=lambda r: r.book.updated_at, reverse=True)
+            return sorted(
+                results,
+                key=lambda r: r.book.downloaded_at or r.book.updated_at,
+                reverse=True,
+            )
         case "imported":
             return sorted(
                 results,
                 key=lambda r: (
                     r.queue.updated_at
                     if r.queue and r.queue.state == DownloadStateEnum.imported
-                    else r.book.updated_at
+                    else _added_at(r)
                 ),
                 reverse=True,
             )
         case _:  # "added" - newest first
-            return sorted(results, key=lambda r: r.book.updated_at, reverse=True)
+            return sorted(results, key=_added_at, reverse=True)
 
 
 def get_wishlist_results(

@@ -7,7 +7,7 @@ from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Query, Security
 from pydantic import BaseModel
 from sqlalchemy.sql.functions import count
-from sqlmodel import Session, col, desc, select
+from sqlmodel import Session, col, desc, func, select
 
 from app.internal.audible.extended import get_extended_metadata
 from app.internal.audible.types import audible_region_type, get_region_from_settings
@@ -128,7 +128,9 @@ async def get_recently_added(
     books = session.exec(
         select(Audiobook)
         .where(col(Audiobook.downloaded))
-        .order_by(desc(Audiobook.updated_at))
+        # updated_at is the metadata cache marker, not a library date - a book
+        # re-fetched by any search would otherwise look freshly added
+        .order_by(desc(func.coalesce(Audiobook.downloaded_at, Audiobook.updated_at)))
         .limit(limit)
     ).all()
     reasons = [

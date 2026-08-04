@@ -111,10 +111,12 @@ async def resolve_source_payload(
     return None, None
 
 
-# How long to wait for a magnet's metadata before giving up and starting it
-# anyway. A healthy swarm answers in seconds; a dead one never will, and that
-# case is already handled downstream (the torrent stalls and gets cleared).
-METADATA_WAIT_SECONDS = 25
+# A swarm with actual seeders answers a metadata request in seconds - it is a
+# few KB pulled from any connected peer. Silence here does not mean "slow", it
+# means nobody is there, and a torrent that cannot produce its own file list
+# will not produce its content either. So a timeout is a REJECTION, not a
+# reason to start hopefully and find out in two hours.
+METADATA_WAIT_SECONDS = 20
 METADATA_POLL_SECONDS = 2
 
 
@@ -122,25 +124,23 @@ async def _inspect_before_start(
     client: DownloadClient, info_hash: str, runtime_minutes: int | None
 ) -> str | None:
     """Wait for the file list, then judge it. -> rejection reason, or None to
-    go ahead. A timeout is not a rejection: the post-download runtime check is
-    still there as a backstop."""
+    go ahead."""
     waited = 0.0
     while waited < METADATA_WAIT_SECONDS:
         try:
             files = await client.list_files(info_hash)
         except DownloadClientError as e:
+            # the client itself is unhappy - not the release's fault
             logger.debug("File list unavailable, proceeding", error=str(e))
             return None
         if files:
             return inspect_file_list([(f.name, f.size) for f in files], runtime_minutes)
         await asyncio.sleep(METADATA_POLL_SECONDS)
         waited += METADATA_POLL_SECONDS
-    logger.info(
-        "Metadata did not arrive in time, starting without inspection",
-        info_hash=info_hash,
-        waited_seconds=waited,
+    return (
+        f"No metadata after {METADATA_WAIT_SECONDS}s - a seeded torrent answers "
+        "in seconds, so this swarm is dead"
     )
-    return None
 
 
 async def grab_via_client(

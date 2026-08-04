@@ -1,5 +1,5 @@
 import base64
-from typing import final, override
+from typing import cast, final, override
 from urllib.parse import parse_qs
 
 import aiohttp
@@ -7,6 +7,7 @@ from aiohttp import ClientSession, FormData
 from pydantic import BaseModel, TypeAdapter
 
 from app.internal.download_client.abstract import (
+    ClientFile,
     ClientItemStatus,
     DownloadClient,
     DownloadClientError,
@@ -123,6 +124,7 @@ class QbittorrentClient(DownloadClient):
         source: TorrentSource,
         torrent_bytes: bytes | None,
         category: str,
+        stopped: bool = False,
     ) -> str:
         """Add a torrent to qBittorrent. Prefers the raw .torrent (reliable info-hash),
         falls back to the magnet link."""
@@ -131,6 +133,11 @@ class QbittorrentClient(DownloadClient):
 
         form = FormData()
         form.add_field("category", category)
+        if stopped:
+            # qBit 5 renamed 'paused' to 'stopped'; send both so this works
+            # either side of the rename. Unknown fields are ignored.
+            form.add_field("stopped", "true")
+            form.add_field("paused", "true")
         if torrent_bytes is not None:
             import torf
 
@@ -240,6 +247,57 @@ class QbittorrentClient(DownloadClient):
             )
             for t in torrents
         ]
+
+    @override
+    @override
+    async def list_files(self, download_id: str) -> list[ClientFile]:
+        """Files inside a torrent. Returns [] while qBittorrent is still
+        fetching metadata - a magnet arrives without any file list."""
+        async with self._session() as client:
+            await self._login(client)
+            async with client.get(
+                f"{self.base_url}/api/v2/torrents/files",
+                params={"hash": download_id},
+                headers={"User-Agent": USER_AGENT},
+            ) as r:
+                if r.status == 404:
+                    return []
+                if not r.ok:
+                    raise DownloadClientError(
+                        f"qBittorrent files lookup failed: {r.status}"
+                    )
+                try:
+                    payload = cast(object, await r.json(content_type=None))
+                except Exception:
+                    return []
+        if not isinstance(payload, list):
+            return []
+        files: list[ClientFile] = []
+        for entry in cast(list[object], payload):
+            if not isinstance(entry, dict):
+                continue
+            fields = cast(dict[str, object], entry)
+            name = fields.get("name")
+            size = fields.get("size")
+            if isinstance(name, str) and isinstance(size, int):
+                files.append(ClientFile(name=name, size=size))
+        return files
+
+    @override
+    async def start(self, download_id: str) -> None:
+        """Start a torrent added with stopped=True. /start is the qBit 5 name,
+        /resume the older one."""
+        async with self._session() as client:
+            await self._login(client)
+            for endpoint in ("start", "resume"):
+                async with client.post(
+                    f"{self.base_url}/api/v2/torrents/{endpoint}",
+                    data={"hashes": download_id},
+                    headers={"User-Agent": USER_AGENT},
+                ) as r:
+                    if r.ok:
+                        return
+        raise DownloadClientError("qBittorrent refused to start the torrent")
 
     @override
     async def remove(self, download_id: str, delete_files: bool = False) -> None:

@@ -11,6 +11,7 @@ Books without a known runtime (manual requests) are accepted on the presence of
 audio alone - there is nothing to compare against.
 """
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +28,42 @@ AUDIO_EXTENSIONS = {".m4b", ".m4a", ".mp3", ".flac", ".ogg", ".opus", ".aac", ".
 DURATION_TOLERANCE = 0.25  # ±25%
 # Below this there is nothing meaningful to compare - treat as unknown.
 MIN_COMPARABLE_MINUTES = 5
+
+
+VIDEO_EXTENSIONS = {
+    ".mkv",
+    ".mp4",
+    ".avi",
+    ".m4v",
+    ".mov",
+    ".wmv",
+    ".flv",
+    ".mpg",
+    ".mpeg",
+    ".vob",
+    ".ogv",
+    ".rmvb",
+    ".ts",
+}
+
+# Lowest believable bitrate per format, in kbps. Lossless formats are the whole
+# point of this table: 527 MB of FLAC is about 2.5 hours, so a 20h book cannot
+# be in there however plausible the total size looks for a lossy encode.
+MIN_KBPS_BY_EXT = {
+    ".flac": 400,
+    ".wav": 700,
+    ".alac": 400,
+    ".ape": 400,
+    ".m4b": 24,
+    ".m4a": 24,
+    ".mp3": 24,
+    ".aac": 24,
+    ".ogg": 24,
+    ".opus": 16,
+    ".wma": 24,
+}
+# A stray sample clip in an otherwise fine torrent should not veto it.
+VIDEO_SHARE_VETO = 0.25
 
 
 @dataclass
@@ -102,3 +139,59 @@ def verify_download(
         measured_minutes=measured,
         expected_minutes=expected,
     )
+
+
+def inspect_file_list(
+    files: "list[tuple[str, int]]", runtime_minutes: int | None
+) -> str | None:
+    """Judge a torrent from its file list alone, before any content is
+    downloaded. -> rejection reason, or None to proceed.
+
+    This is the only check that can see inside a magnet link. Magnets carry no
+    file list, so qBittorrent is asked to fetch just the metadata (a few KB)
+    and the payload is judged from that.
+
+    It is decisive where title and total size are not: 527 MB of FLAC is about
+    2.5 hours of audio, so a music album cannot masquerade as a 20-hour book
+    even though its total size implies a perfectly plausible 57 kbps if you
+    assume the wrong format.
+    """
+    if not files:
+        return None  # metadata not in yet; nothing to judge
+
+    total = sum(size for _, size in files)
+    audio_bytes = 0
+    video_bytes = 0
+    by_ext: dict[str, int] = {}
+    for name, size in files:
+        ext = os.path.splitext(name)[1].lower()
+        if ext in AUDIO_EXTENSIONS:
+            audio_bytes += size
+            by_ext[ext] = by_ext.get(ext, 0) + size
+        elif ext in VIDEO_EXTENSIONS:
+            video_bytes += size
+
+    if audio_bytes == 0:
+        return f"No audio files in the torrent ({len(files)} file(s))"
+
+    if total > 0 and video_bytes / total > VIDEO_SHARE_VETO:
+        return (
+            f"{video_bytes / total:.0%} of the torrent is video "
+            f"({video_bytes / 1e6:.0f} MB) - not an audiobook"
+        )
+
+    if not runtime_minutes or runtime_minutes < MIN_COMPARABLE_MINUTES:
+        return None
+
+    # judge against the dominant audio format's floor
+    dominant = max(by_ext, key=lambda e: by_ext[e])
+    min_kbps = MIN_KBPS_BY_EXT.get(dominant, 24)
+    min_bytes = runtime_minutes * 60 * (min_kbps * 1000 / 8)
+    if audio_bytes < min_bytes:
+        implied_hours = audio_bytes * 8 / (min_kbps * 1000) / 3600
+        return (
+            f"{audio_bytes / 1e6:.0f} MB of {dominant.lstrip('.')} is at most "
+            f"~{implied_hours:.1f}h of audio, but the book is "
+            f"{runtime_minutes / 60:.1f}h"
+        )
+    return None

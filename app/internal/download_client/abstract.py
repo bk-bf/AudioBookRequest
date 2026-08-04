@@ -22,6 +22,13 @@ class ClientItemStatus(pydantic.BaseModel):
     content_path: str | None = None  # path of the (root) downloaded content
 
 
+class ClientFile(pydantic.BaseModel):
+    """One file inside a torrent, as reported by the client."""
+
+    name: str
+    size: int  # bytes
+
+
 class DownloadClient(ABC):
     """Minimal interface ABR needs from a download client (Radarr-style)."""
 
@@ -36,8 +43,23 @@ class DownloadClient(ABC):
         source: TorrentSource,
         torrent_bytes: bytes | None,
         category: str,
+        stopped: bool = False,
     ) -> str:
-        """Add a torrent (magnet or .torrent file content) and return its info-hash."""
+        """Add a torrent (magnet or .torrent file content) and return its info-hash.
+
+        With stopped=True the torrent is added but not started, so its file list
+        can be inspected before any content is downloaded.
+        """
+        ...
+
+    @abstractmethod
+    async def list_files(self, download_id: str) -> list[ClientFile]:
+        """Files inside a torrent. Empty while metadata is still being fetched."""
+        ...
+
+    @abstractmethod
+    async def start(self, download_id: str) -> None:
+        """Start a torrent that was added stopped."""
         ...
 
     @abstractmethod

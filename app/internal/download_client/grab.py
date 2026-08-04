@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from urllib.parse import urljoin
 
@@ -9,6 +10,7 @@ from app.internal.download_client.abstract import (
     DownloadClientError,
 )
 from app.internal.download_client.config import dc_config
+from app.internal.download_client.verify import inspect_file_list
 from app.internal.download_client.qbittorrent import QbittorrentClient
 from app.internal.models import (
     Audiobook,
@@ -109,6 +111,38 @@ async def resolve_source_payload(
     return None, None
 
 
+# How long to wait for a magnet's metadata before giving up and starting it
+# anyway. A healthy swarm answers in seconds; a dead one never will, and that
+# case is already handled downstream (the torrent stalls and gets cleared).
+METADATA_WAIT_SECONDS = 25
+METADATA_POLL_SECONDS = 2
+
+
+async def _inspect_before_start(
+    client: DownloadClient, info_hash: str, runtime_minutes: int | None
+) -> str | None:
+    """Wait for the file list, then judge it. -> rejection reason, or None to
+    go ahead. A timeout is not a rejection: the post-download runtime check is
+    still there as a backstop."""
+    waited = 0.0
+    while waited < METADATA_WAIT_SECONDS:
+        try:
+            files = await client.list_files(info_hash)
+        except DownloadClientError as e:
+            logger.debug("File list unavailable, proceeding", error=str(e))
+            return None
+        if files:
+            return inspect_file_list([(f.name, f.size) for f in files], runtime_minutes)
+        await asyncio.sleep(METADATA_POLL_SECONDS)
+        waited += METADATA_POLL_SECONDS
+    logger.info(
+        "Metadata did not arrive in time, starting without inspection",
+        info_hash=info_hash,
+        waited_seconds=waited,
+    )
+    return None
+
+
 async def grab_via_client(
     session: Session,
     client_session: ClientSession,
@@ -127,7 +161,26 @@ async def grab_via_client(
         source = source.model_copy(update={"magnet_url": magnet_url})
 
     category = dc_config.get_category(session)
-    info_hash = await client.add_torrent(source, torrent_bytes, category)
+    runtime = getattr(book, "runtime_length_min", None)
+
+    # Add stopped first so the payload can be judged before any of it is
+    # downloaded. A magnet carries no file list, so letting qBittorrent fetch
+    # the metadata (a few KB) is the only way to see inside one.
+    info_hash = await client.add_torrent(source, torrent_bytes, category, stopped=True)
+    reason = await _inspect_before_start(client, info_hash, runtime)
+    if reason:
+        logger.info(
+            "Rejected release after inspecting its files",
+            title=source.title,
+            reason=reason,
+            book=book.title,
+        )
+        try:
+            await client.remove(info_hash, delete_files=True)
+        except DownloadClientError as e:
+            logger.warning("Could not remove rejected torrent", error=str(e))
+        raise DownloadClientError(f"Rejected before download: {reason}")
+    await client.start(info_hash)
 
     item = DownloadQueueItem(
         asin=book.asin if isinstance(book, Audiobook) else None,

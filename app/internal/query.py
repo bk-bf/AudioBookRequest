@@ -27,6 +27,11 @@ from sqlmodel import col, select
 
 querying: set[str] = set()
 
+# How many failed downloads a book gets automatically before it is left alone.
+# Each attempt is a different release: the failed source's guid is blocklisted
+# and the next-best candidate picked.
+MAX_AUTO_ATTEMPTS = 3
+
 
 def has_any_download_history(session: Session, asin_or_uuid: str) -> bool:
     try:
@@ -35,6 +40,24 @@ def has_any_download_history(session: Session, asin_or_uuid: str) -> bool:
     except ValueError:
         clause = col(DownloadQueueItem.asin) == asin_or_uuid
     return session.exec(select(DownloadQueueItem).where(clause)).first() is not None
+
+
+def count_failed_attempts(session: Session, asin_or_uuid: str) -> int:
+    """How many downloads for this book have already failed. Bounds automatic
+    retries so a book with an endless supply of bad releases cannot be grabbed
+    forever."""
+    try:
+        uuid_obj = uuid.UUID(asin_or_uuid)
+        clause = col(DownloadQueueItem.manual_request_id) == uuid_obj
+    except ValueError:
+        clause = col(DownloadQueueItem.asin) == asin_or_uuid
+    return len(
+        session.exec(
+            select(DownloadQueueItem).where(
+                clause, col(DownloadQueueItem.state) == DownloadStateEnum.error
+            )
+        ).all()
+    )
 
 
 def get_failed_source_guids(session: Session, asin_or_uuid: str) -> set[str]:
@@ -132,13 +155,16 @@ async def query_sources(
                 )
                 return QueryResult(sources=ranked, book=book, state="ok")
 
-            # ONCE-ONLY: a book is downloaded automatically at most once, ever.
-            # Any prior attempt (failed or not) blocks automatic re-grabs; only a
-            # manual action (button/bulk) may try again.
-            if not manual and has_any_download_history(session, asin_or_uuid):
+            # BOUNDED RETRY: a bad release (wrong book, ebook, dead swarm) used
+            # to end the story - the book was attempted once and never again.
+            # Now each failure blocklists that source and the next-best one is
+            # tried, up to MAX_AUTO_ATTEMPTS.
+            attempts = count_failed_attempts(session, asin_or_uuid)
+            if not manual and attempts >= MAX_AUTO_ATTEMPTS:
                 logger.info(
-                    "Auto-download skipped: book already attempted once",
+                    "Auto-download skipped: retry budget exhausted",
                     asin=asin_or_uuid,
+                    attempts=attempts,
                 )
                 return QueryResult(sources=ranked, book=book, state="ok")
             if not manual and isinstance(book, Audiobook) and book.missing:
@@ -147,10 +173,22 @@ async def query_sources(
                 )
                 return QueryResult(sources=ranked, book=book, state="ok")
 
-            # manual retries still skip sources that already failed
+            # every retry skips the sources that already failed, so each attempt
+            # is a genuinely different release
             failed_guids = get_failed_source_guids(session, asin_or_uuid)
             candidate = next((s for s in ranked if s.guid not in failed_guids), None)
             if candidate is None:
+                if not manual and isinstance(book, Audiobook) and not book.missing:
+                    # nothing left to try - stop pretending it is coming
+                    book.missing = True
+                    session.add(book)
+                    session.commit()
+                    logger.info(
+                        "Book tagged missing: every source has been tried",
+                        asin=asin_or_uuid,
+                        tried=len(failed_guids),
+                    )
+                    return QueryResult(sources=ranked, book=book, state="ok")
                 raise HTTPException(
                     status_code=500,
                     detail="No untried sources left for this book",

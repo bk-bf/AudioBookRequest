@@ -9,6 +9,7 @@ from sqlmodel import Session
 from app.internal.audiobookshelf.client import abs_trigger_scan
 from app.internal.audiobookshelf.config import abs_config
 from app.internal.download_client.config import dc_config
+from app.internal.download_client.verify import verify_download
 from app.internal.models import (
     Audiobook,
     DownloadQueueItem,
@@ -118,6 +119,24 @@ async def import_queue_item(
         session.commit()
         logger.error("Import failed: path not visible to ABR", path=str(source_path))
         return False
+
+    # Verify BEFORE copying: a wrong-book download should never reach the
+    # library, and rejecting it here means nothing has to be cleaned up after.
+    verdict = verify_download(source_path, book)
+    if not verdict.ok:
+        item.state = DownloadStateEnum.error
+        item.error = verdict.reason
+        session.add(item)
+        session.commit()
+        logger.warning(
+            "Rejected download: failed verification",
+            title=book.title,
+            reason=verdict.reason,
+            measured_minutes=verdict.measured_minutes,
+            expected_minutes=verdict.expected_minutes,
+        )
+        return False
+    logger.info("Download verified", title=book.title, detail=verdict.reason)
 
     author = sanitize_path_part(book.authors[0] if book.authors else "Unknown Author")
     title = sanitize_path_part(book.title)

@@ -17,6 +17,7 @@ dependencies = [
     "jinja2-htmlmin>=1.1.0",
     "jinjax>=0.63",
     "markdown>=3.10.2",
+    "mutagen>=1.48.1",
     "psycopg2-binary>=2.9.12",
     "pydantic>=2.13.4",
     "pydantic-core>=2.46.4",

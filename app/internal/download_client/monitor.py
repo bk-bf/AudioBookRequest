@@ -36,15 +36,27 @@ async def _handle_failed_item(session: Session, item: DownloadQueueItem, reason:
     """A download failed: clean the torrent + data out of the client and tag
     the book as missing. NO automatic retry - a book is only ever downloaded
     once automatically; the user can retry manually from the book page."""
+    from app.internal.query import MAX_AUTO_ATTEMPTS, count_failed_attempts
+
     item.state = DownloadStateEnum.error
     item.error = reason
     session.add(item)
+    session.commit()  # commit first so this failure counts towards the budget
+
     if item.asin:
         book = session.get(Audiobook, item.asin)
-        if book and not book.downloaded:
+        attempts = count_failed_attempts(session, item.asin)
+        # only give up once the retry budget is spent - otherwise leave the book
+        # wishlisted so the next sweep tries the next-best release
+        if book and not book.downloaded and attempts >= MAX_AUTO_ATTEMPTS:
             book.missing = True
             session.add(book)
-    session.commit()
+            session.commit()
+            logger.info(
+                "Book tagged missing: retry budget exhausted",
+                asin=item.asin,
+                attempts=attempts,
+            )
     client = get_download_client(session)
     if client and item.download_id:
         try:
@@ -159,15 +171,16 @@ async def auto_download_sweep():
 
         retry_seconds = dc_config.get_auto_retry_minutes(session) * 60
         results = get_wishlist_results(session, None, "not_downloaded")
-        from app.internal.query import has_any_download_history
+        from app.internal.query import MAX_AUTO_ATTEMPTS, count_failed_attempts
 
         candidates: list[str] = []
         for result in results:
             asin = result.book.asin
             if result.book.missing:
                 continue
-            # once-only: anything attempted before is never auto-grabbed again
-            if has_any_download_history(session, asin):
+            # bounded retry: each failure blocklists that release and the next
+            # sweep tries the next-best one, until the budget runs out
+            if count_failed_attempts(session, asin) >= MAX_AUTO_ATTEMPTS:
                 continue
             if get_active_queue_item(session, asin):
                 continue
@@ -194,17 +207,27 @@ async def auto_download_sweep():
                     )
                 except Exception as e:
                     logger.info("Auto-download attempt failed", asin=asin, error=str(e))
-                # one shot only: if the attempt didn't produce a download,
-                # tag the book missing so it's visible and never re-queried
-                if not has_any_download_history(session, asin):
-                    book = session.get(Audiobook, asin)
-                    if book and not book.downloaded and not book.missing:
-                        book.missing = True
-                        session.add(book)
-                        session.commit()
-                        logger.info(
-                            "Book tagged missing (no grabbable source)", asin=asin
-                        )
+                # nothing queued and nothing left to try: tag it missing so it
+                # shows up as needing attention rather than silently waiting
+                if not get_active_queue_item(session, asin):
+                    attempts = count_failed_attempts(session, asin)
+                    exhausted = attempts >= MAX_AUTO_ATTEMPTS
+                    if exhausted or attempts == 0:
+                        book = session.get(Audiobook, asin)
+                        if book and not book.downloaded and not book.missing:
+                            book.missing = True
+                            session.add(book)
+                            session.commit()
+                            logger.info(
+                                "Book tagged missing",
+                                asin=asin,
+                                reason=(
+                                    "retry budget exhausted"
+                                    if exhausted
+                                    else "no grabbable source"
+                                ),
+                                attempts=attempts,
+                            )
 
 
 @asynccontextmanager

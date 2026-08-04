@@ -177,6 +177,13 @@ class AudiobookWishlistResult(BaseModel):
     requests: list[AudiobookRequest]
     download_error: str | None = None
     queue: "DownloadQueueItem | None" = None
+    # failed download attempts so far, and the budget they count against
+    attempts: int = 0
+    max_attempts: int = 0
+
+    @property
+    def retries_left(self) -> int:
+        return max(0, self.max_attempts - self.attempts)
 
     @property
     def amount_requested(self):
@@ -254,6 +261,10 @@ class DownloadQueueItem(BaseSQLModel, table=True):
     save_path: str | None = None  # content path as reported by the client
     import_path: str | None = None  # where the files were imported to
     error: str | None = None
+    # True when the download finished but failed verification (wrong book, no
+    # audio) rather than failing to download. Kept explicit rather than parsed
+    # out of `error`, since the UI and the retry logic both branch on it.
+    rejected: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(
         default_factory=datetime.now,
         sa_column=Column(

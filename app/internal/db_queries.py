@@ -189,6 +189,7 @@ def get_wishlist_results(
     # Attach the newest download-queue item per book so the wishlist can show
     # live download progress and import state.
     queue_map: dict[str, DownloadQueueItem] = {}
+    attempts_map: dict[str, int] = {}
     asins = [book.asin for book in results]
     if asins:
         queue_items = session.exec(
@@ -199,12 +200,19 @@ def get_wishlist_results(
         for item in queue_items:
             if item.asin:
                 queue_map[item.asin] = item  # newest wins
+                if item.state == DownloadStateEnum.error:
+                    attempts_map[item.asin] = attempts_map.get(item.asin, 0) + 1
+
+    # imported here to avoid a circular import at module load
+    from app.internal.query import MAX_AUTO_ATTEMPTS
 
     wishlist_results = [
         AudiobookWishlistResult(
             book=book,
             requests=book.requests,
             queue=queue_map.get(book.asin),
+            attempts=attempts_map.get(book.asin, 0),
+            max_attempts=MAX_AUTO_ATTEMPTS,
         )
         for book in results
     ]

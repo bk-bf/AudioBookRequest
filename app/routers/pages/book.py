@@ -22,7 +22,11 @@ from app.internal.library import (
     list_library_folders,
     suggest_folders_for_book,
 )
-from app.internal.query import background_auto_download
+from app.internal.query import (
+    MAX_AUTO_ATTEMPTS,
+    background_auto_download,
+    count_failed_attempts,
+)
 from app.internal.models import (
     Audiobook,
     AudiobookRequest,
@@ -107,6 +111,8 @@ async def book_detail(
         book=book,
         requests=requests,
         queue_items=queue_items,
+        attempts=count_failed_attempts(session, asin),
+        max_attempts=MAX_AUTO_ATTEMPTS,
         region=get_region_from_settings(),
         extended=extended,
         abs_item_url=abs_item_url,
@@ -183,6 +189,8 @@ async def book_status(
         user=user,
         book=book,
         queue_items=queue_items,
+        attempts=count_failed_attempts(session, asin),
+        max_attempts=MAX_AUTO_ATTEMPTS,
     )
 
 

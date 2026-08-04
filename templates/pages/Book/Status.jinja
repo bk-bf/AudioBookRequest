@@ -3,6 +3,8 @@
     book: Audiobook,
     queue_items: list[DownloadQueueItem],
     path_ok: bool | None = None,
+    attempts: int = 0,
+    max_attempts: int = 0,
 #}
 
 {% set active = queue_items | selectattr("state.is_active") | list %}
@@ -22,6 +24,19 @@
                   title="Download failed or no sources — kept on the wishlist; retry manually anytime">Missing</span>
         {% else %}
             <span class="badge badge-ghost">Wanted</span>
+        {% endif %}
+        {% if max_attempts and attempts and not book.downloaded %}
+            {% if attempts < max_attempts and not active %}
+                <span class="badge badge-ghost badge-sm"
+                      title="Each retry picks a release that has not been tried yet">
+                    retrying — {{ attempts }} of {{ max_attempts }} attempts used
+                </span>
+            {% elif attempts >= max_attempts %}
+                <span class="badge badge-ghost badge-sm"
+                      title="Automatic retries are spent; use Download to pick a release by hand">
+                    {{ attempts }} of {{ max_attempts }} attempts used
+                </span>
+            {% endif %}
         {% endif %}
     </div>
     {% if book.downloaded_path %}
@@ -92,7 +107,17 @@
                                 {% elif item.state.value.__eq__("imported") %}
                                     <span class="badge badge-success" title="{{ item.import_path }}">Imported</span>
                                 {% elif item.state.value.__eq__("error") %}
-                                    <span class="badge badge-error" title="{{ item.error }}">Failed</span>
+                                    {% if item.rejected %}
+                                        <span class="badge badge-error"
+                                              title="Downloaded, but it was not this book">Rejected</span>
+                                    {% else %}
+                                        <span class="badge badge-error" title="{{ item.error }}">Failed</span>
+                                    {% endif %}
+                                    {% if item.error %}
+                                        <div class="mt-1 max-w-72 text-xs opacity-60">
+                                            {{ item.error }}
+                                        </div>
+                                    {% endif %}
                                 {% endif %}
                             </td>
                             <td class="text-xs opacity-60">

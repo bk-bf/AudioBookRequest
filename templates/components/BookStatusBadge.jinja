@@ -3,6 +3,8 @@
     missing: bool = False,
     queue: DownloadQueueItem | None = None,
     requesters: str = "",
+    attempts: int = 0,
+    max_attempts: int = 0,
 #}
 
 {% if queue %}
@@ -23,12 +25,33 @@
     {% elif queue.state.value.__eq__("imported") %}
         <span class="badge badge-success" title="{{ queue.import_path }}">Imported</span>
     {% elif queue.state.value.__eq__("error") %}
-        <span class="badge badge-error" title="{{ queue.error }}">Failed</span>
+        {% if queue.rejected %}
+            <span class="badge badge-error"
+                  title="{{ queue.error }} — {{ queue.source_title }}">Rejected</span>
+        {% else %}
+            <span class="badge badge-error"
+                  title="{{ queue.error }} — {{ queue.source_title }}">Failed</span>
+        {% endif %}
+        {% if max_attempts and not downloaded %}
+            {% if attempts < max_attempts %}
+                <span class="badge badge-ghost badge-sm"
+                      title="A different release will be tried on the next sweep">retrying {{ attempts }}/{{ max_attempts }}</span>
+            {% else %}
+                <span class="badge badge-ghost badge-sm"
+                      title="No automatic retries left — retry by hand from the book page">{{ attempts }}/{{ max_attempts }} tried</span>
+            {% endif %}
+        {% endif %}
     {% endif %}
 {% elif downloaded %}
     <span class="badge badge-success">Downloaded</span>
 {% elif missing %}
-    <span class="badge badge-warning" title="Download failed or no sources yet">Missing</span>
+    <span class="badge badge-warning"
+          title="{% if attempts %}{{ attempts }} release(s) tried, none worked{% else %}Download failed or no sources yet{% endif %}">
+        Missing
+        {% if attempts %}
+            ({{ attempts }} tried)
+        {% endif %}
+    </span>
 {% else %}
     <span class="text-xs opacity-40">—</span>
 {% endif %}

@@ -126,6 +126,7 @@ async def import_queue_item(
     if not verdict.ok:
         item.state = DownloadStateEnum.error
         item.error = verdict.reason
+        item.rejected = True
         session.add(item)
         session.commit()
         logger.warning(

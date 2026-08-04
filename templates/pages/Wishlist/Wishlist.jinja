@@ -154,7 +154,7 @@
                                 {% endif %}
                             </td>
                             <td class="min-w-24">
-                                <BookStatusBadge downloaded={{ book.downloaded }} missing={{ book.missing }} queue={{ result.queue }} requesters={{ result.requests | map(attribute="user_username") | join(", ") }} />
+                                <BookStatusBadge downloaded={{ book.downloaded }} missing={{ book.missing }} queue={{ result.queue }} requesters={{ result.requests | map(attribute="user_username") | join(", ") }} attempts={{ result.attempts }} max_attempts={{ result.max_attempts }} />
                             </td>
                             <td>
                                 <div class="grid grid-cols-2 min-w-32 gap-1 w-fit ml-auto">
@@ -238,7 +238,7 @@
                            title="{{ book.title }}">{{ book.title }}</a>
                         <span class="text-xs opacity-60 truncate">{{ book.authors|join(", ") }} · {{ book.release_date.strftime("%Y") }} · {{ book.runtime_length_hrs }}h</span>
                         <div class="pt-1">
-                            <BookStatusBadge downloaded={{ book.downloaded }} missing={{ book.missing }} queue={{ result.queue }} requesters={{ result.requests | map(attribute="user_username") | join(", ") }} />
+                            <BookStatusBadge downloaded={{ book.downloaded }} missing={{ book.missing }} queue={{ result.queue }} requesters={{ result.requests | map(attribute="user_username") | join(", ") }} attempts={{ result.attempts }} max_attempts={{ result.max_attempts }} />
                         </div>
                     </div>
                     <div class="grid grid-cols-2 gap-1 w-fit h-fit shrink-0">

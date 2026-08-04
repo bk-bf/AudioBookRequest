@@ -8,7 +8,7 @@ from rapidfuzz import fuzz, utils
 from sqlmodel import Session
 
 from app.internal.models import Audiobook, ManualBookRequest, ProwlarrSource
-from app.internal.ranking.media_kind import ebook_marker
+from app.internal.ranking.media_kind import rejection
 from app.internal.ranking.quality import quality_config
 from app.internal.ranking.quality_extract import Quality, extract_qualities
 from app.util.log import logger
@@ -30,18 +30,9 @@ async def rank_sources(
         qualities = await extract_qualities(session, client_session, source, book)
         return [RankSource(source=source, quality=q) for q in qualities]
 
-    # Hard reject, not a scoring penalty: an ebook release can otherwise still
-    # win by being the only source, and no number of seeders makes an EPUB a
-    # valid audiobook.
-    audio_sources: list[ProwlarrSource] = []
-    for source in sources:
-        marker = ebook_marker(source.title)
-        if marker:
-            logger.debug(
-                "Rejected ebook release", source_title=source.title, marker=marker
-            )
-            continue
-        audio_sources.append(source)
+    # Belt and braces: query_prowlarr already drops these at the boundary, but
+    # sources also reach here from the cache and from callers that bypass it.
+    audio_sources = [s for s in sources if not rejection(s.title)]
 
     coros = [get_qualities(source) for source in audio_sources]
     rank_sources = [x for y in await asyncio.gather(*coros) for x in y]

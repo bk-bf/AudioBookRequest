@@ -16,6 +16,7 @@ from app.internal.download_client.abstract import DownloadClientError
 from app.internal.download_client.config import dc_config
 from app.internal.download_client.grab import get_download_client, grab_via_client
 from app.internal.indexers.abstract import SessionContainer
+from app.internal.ranking.media_kind import rejection
 from app.internal.models import (
     Audiobook,
     EventEnum,
@@ -349,11 +350,28 @@ async def query_prowlarr(
     )
 
     sources: list[ProwlarrSource] = []
+    rejected_kinds: dict[str, int] = {}
     for result in search_results:
         try:
             if result.protocol not in ["torrent", "usenet"]:
                 logger.info(
                     "Skipping source with unknown protocol", protocol=result.protocol
+                )
+                continue
+            # Dropped here, at the boundary, rather than during ranking: a
+            # rejected release should never reach the source cache, the sources
+            # list, or a manual grab. Prowlarr's own category filter cannot do
+            # this - indexers mislabel video courses as Audio/Audiobook (3030),
+            # so the category says audiobook while the title says TTC VIDEO.
+            verdict = rejection(result.title)
+            if verdict:
+                kind, marker = verdict
+                rejected_kinds[kind] = rejected_kinds.get(kind, 0) + 1
+                logger.debug(
+                    "Rejected non-audiobook release",
+                    source_title=result.title,
+                    kind=kind,
+                    marker=marker,
                 )
                 continue
             if result.protocol == "torrent":
@@ -397,6 +415,14 @@ async def query_prowlarr(
     # add additional metadata using any available indexers
     container = SessionContainer(session=session, client_session=client_session)
     await edit_source_metadata(book, sources, container)
+
+    if rejected_kinds:
+        logger.info(
+            "Filtered non-audiobook releases",
+            query=query,
+            rejected=rejected_kinds,
+            kept=len(sources),
+        )
 
     prowlarr_source_cache.set(sources, query)
 

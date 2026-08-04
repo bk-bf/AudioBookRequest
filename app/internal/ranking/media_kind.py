@@ -1,14 +1,20 @@
-"""Tell an ebook release apart from an audiobook one.
+"""Tell an audiobook release apart from an ebook or video one.
 
-Prowlarr indexers happily return ebook releases for an audiobook search, and
-fuzzy title matching cannot see the difference - "Virgil - The Aeneid (EPUB)
-[Penguin Classics]" matches the book perfectly on title and author. Ranking
-scores it like any other source, and with no seeders it stalls forever.
+Prowlarr indexers happily return non-audiobook releases for an audiobook
+search, and fuzzy title matching cannot see the difference - "Virgil - The
+Aeneid (EPUB) [Penguin Classics]" and "TTC VIDEO - The Aeneid of Virgil" both
+match the requested book perfectly on title and author. Ranking scores them
+like any other source, and with no seeders they stall forever.
 
-The check is deliberately asymmetric: an ebook marker only disqualifies a
-release when there is *no* audio marker, because audiobook releases routinely
-bundle the ebook as a bonus ("Unabridged M4B + EPUB", or a folder of MP3s with
-a stray .epub inside).
+Two levels of rejection:
+
+- **Conditional** markers (ebook formats, video containers) only disqualify a
+  release when nothing else says audio, because audiobook releases routinely
+  bundle extras - "Unabridged M4B + EPUB", or a folder of MP3s with a stray
+  .epub inside.
+- **Unconditional** markers (resolutions, rip types, video codecs, the word
+  "video") reject regardless. A 1080p BluRay rip is not an audiobook however
+  many audio words appear in its title.
 """
 
 import re
@@ -29,6 +35,51 @@ EBOOK_EXTENSIONS = (
     "prc",
 )
 EBOOK_KEYWORDS = ("ebook", "e-book", "retail epub", "kindle", "comic", "magazine")
+
+# Containers that are usually video but occasionally wrap audio - an audio
+# marker elsewhere in the title overrides these.
+VIDEO_CONTAINERS = (
+    "mkv",
+    "mp4",
+    "avi",
+    "m4v",
+    "mov",
+    "wmv",
+    "flv",
+    "mpg",
+    "mpeg",
+    "vob",
+    "ogv",
+    "rmvb",
+    "webm",
+)
+# Nothing rescues these: no audiobook is a 1080p BluRay rip.
+VIDEO_DEFINITE = (
+    "video",
+    "x264",
+    "x265",
+    "h264",
+    "h265",
+    "hevc",
+    "xvid",
+    "divx",
+    "bluray",
+    "blu-ray",
+    "bdrip",
+    "brrip",
+    "dvdrip",
+    "dvd",
+    "hdtv",
+    "webrip",
+    "web-dl",
+    "hdrip",
+    "480p",
+    "720p",
+    "1080p",
+    "1440p",
+    "2160p",
+    "4k",
+)
 
 AUDIO_EXTENSIONS = (
     "m4b",
@@ -53,13 +104,13 @@ AUDIO_KEYWORDS = (
     "narrated",
     "narrator",
     "vbr",
-    "cbr kbps",  # bitrate mention, not the comic format
     "kbps",
 )
 
 
 def _mentions(title: str, needles: tuple[str, ...]) -> str | None:
-    """Match whole words/tokens only, so 'aa' does not fire inside 'Isaac'."""
+    """Match whole tokens only, so 'aa' does not fire inside 'Isaac' and '4k'
+    does not fire inside a catalogue number."""
     for needle in needles:
         pattern = r"(?<![a-z0-9])" + re.escape(needle) + r"(?![a-z0-9])"
         if re.search(pattern, title):
@@ -67,17 +118,29 @@ def _mentions(title: str, needles: tuple[str, ...]) -> str | None:
     return None
 
 
-def ebook_marker(title: str) -> str | None:
-    """The ebook marker that disqualifies this release, if any."""
+def rejection(title: str) -> tuple[str, str] | None:
+    """-> (kind, marker) when the release should never be grabbed for an
+    audiobook request, else None."""
     lowered = title.lower()
-    # 'cbr' is both a comic format and a bitrate mode; a bitrate mention makes
-    # it audio, so resolve the audio side first
-    audio = _mentions(lowered, AUDIO_EXTENSIONS) or _mentions(lowered, AUDIO_KEYWORDS)
-    if audio:
+
+    definite_video = _mentions(lowered, VIDEO_DEFINITE)
+    if definite_video:
+        return "video", definite_video
+
+    # 'cbr' is both a comic format and a bitrate mode, and 'mp4' sometimes
+    # wraps audio - resolve the audio side before the conditional markers
+    if _mentions(lowered, AUDIO_EXTENSIONS) or _mentions(lowered, AUDIO_KEYWORDS):
         return None
-    return _mentions(lowered, EBOOK_EXTENSIONS) or _mentions(lowered, EBOOK_KEYWORDS)
+
+    container = _mentions(lowered, VIDEO_CONTAINERS)
+    if container:
+        return "video", container
+
+    ebook = _mentions(lowered, EBOOK_EXTENSIONS) or _mentions(lowered, EBOOK_KEYWORDS)
+    if ebook:
+        return "ebook", ebook
+    return None
 
 
-def is_ebook_release(title: str) -> bool:
-    """True when the release is an ebook and carries no sign of being audio."""
-    return ebook_marker(title) is not None
+def is_rejected_release(title: str) -> bool:
+    return rejection(title) is not None

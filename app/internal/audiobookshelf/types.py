@@ -56,6 +56,9 @@ class ABSBookItemMinified(BaseModel):
     media: ABSBookMinified
     mediaType: Literal["book"]
     path: str | None = None
+    # epoch milliseconds. When ABR did not download the book itself this is the
+    # only honest answer to "when did this enter the library".
+    addedAt: int | None = None
 
 
 class ABSPodcastItem(BaseModel):

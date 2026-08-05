@@ -8,7 +8,12 @@ from sqlmodel import Session, col, select
 
 from app.internal.audiobookshelf.config import abs_config
 from app.internal.audiobookshelf.types import ABSBookItemMinified
-from app.internal.models import Audiobook, AudiobookRequest, User
+from app.internal.models import (
+    Audiobook,
+    AudiobookRequest,
+    DownloadQueueItem,
+    User,
+)
 from app.util.connection import USER_AGENT
 from app.util.db import get_session
 from app.util.log import logger
@@ -63,6 +68,16 @@ async def _fetch_all_items(
     return items
 
 
+def _added_at(item: ABSBookItemMinified) -> datetime | None:
+    """ABS reports addedAt in epoch milliseconds."""
+    if not item.addedAt:
+        return None
+    try:
+        return datetime.fromtimestamp(item.addedAt / 1000)
+    except OverflowError, OSError, ValueError:
+        return None
+
+
 def _parse_release_date(published: str | None) -> datetime:
     if published:
         try:
@@ -85,6 +100,18 @@ async def sync_abs_library(
 
     internal_base = abs_config.get_base_url(session) or ""
 
+    # Books ABR downloaded itself have a queue item, and its import time is the
+    # better record. For everything else ABS's addedAt is the only honest answer
+    # to "when did this enter the library" - stamping it with the sync time made
+    # a book that has sat on disk for months surface as today's newest arrival.
+    abr_downloaded: set[str] = {
+        item.asin
+        for item in session.exec(
+            select(DownloadQueueItem).where(col(DownloadQueueItem.asin).is_not(None))
+        ).all()
+        if item.asin
+    }
+
     for item in items:
         meta = item.media.metadata
         if not meta.asin:
@@ -99,6 +126,15 @@ async def sync_abs_library(
                 changed = True
             if item.path and existing.downloaded_path != item.path:
                 existing.downloaded_path = item.path
+                changed = True
+            added = _added_at(item)
+            if (
+                added is not None
+                and meta.asin not in abr_downloaded
+                and existing.downloaded_at != added
+            ):
+                # self-healing: repairs rows already stamped with a sync time
+                existing.downloaded_at = added
                 changed = True
             # repair covers that point at the internal ABS hostname
             if (
@@ -128,6 +164,7 @@ async def sync_abs_library(
                     runtime_length_min=int(round(item.media.duration / 60)),
                     downloaded=True,
                     downloaded_path=item.path,
+                    downloaded_at=_added_at(item),
                 )
             )
             result.added += 1

@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from aiohttp import ClientSession, InvalidUrlClientError
 from sqlmodel import Session, select
@@ -61,6 +62,11 @@ def _replace_variables(
     return template
 
 
+def _fmt(value: datetime | None) -> str:
+    """Timestamps in notifications are for humans, not parsers."""
+    return value.strftime("%Y-%m-%d %H:%M") if value else "unknown"
+
+
 async def _send(
     body: str | dict[str, json_type.JSON],
     notification: Notification,
@@ -111,6 +117,33 @@ async def send_notification(
             book_narrators = ",".join(book.narrators)
             book_cover = book.cover_image
             requesters = [req.user for req in book.requests]
+
+            # {eventUser} is users[0] - an arbitrary requester, and with the
+            # ABS sync attributing library books to root, often the wrong one.
+            # {requesters} names everyone who actually asked, and says so
+            # plainly when nobody did.
+            real = [u for u in requesters if not u.root]
+            other_replacements.setdefault(
+                "requesters",
+                ", ".join(u.username for u in real)
+                if real
+                else "nobody (already in the library)",
+            )
+
+            # Requests are effectively insert-only, so the earliest row is when
+            # it was asked for. downloaded_at is when it entered the library -
+            # the real import time, not when ABR last touched the row.
+            # Only a real request has a meaningful request time. The root
+            # rows are written retroactively when the ABS sync first sees a
+            # book, so they date the discovery, not the asking - and can even
+            # post-date the import, which reads as nonsense.
+            real_requests = [r for r in book.requests if not r.user.root]
+            if real_requests:
+                first = min(r.updated_at for r in real_requests)
+                other_replacements.setdefault("requestedAt", _fmt(first))
+            else:
+                other_replacements.setdefault("requestedAt", "—")
+            other_replacements.setdefault("importedAt", _fmt(book.downloaded_at))
 
         if "bookASIN" not in other_replacements:
             other_replacements["bookASIN"] = book_asin
